@@ -6,22 +6,31 @@ library(sp);library(scales);library(raster);library(viridis);library(proj4);libr
 
 #Function form
 GPSCleaner <- function() {
+  myseason <- as.numeric(readline(prompt="What year do you want to clean? "))
   datapath <- readline(prompt="Please enter the path to the GPS .txt files: ")
   deppath <- readline(prompt="Please enter the path to the deployment .csv file: ")
   toremove <- as.numeric(readline(prompt = "How many character to remove from file names to get the full ID? "))
   flist <- list.files(datapath, pattern = "*.txt")
   deployment <- read.csv(deppath, sep = ";")
+  weighbridge <- readRDS("Data/weighbridge.rds")
   for(n in 1:length(flist)){
     depID <- substr(flist[n],1,nchar(flist[n])-toremove) #Extract the deployment ID from the file name
     print(depID)
     mydeploy <- deployment %>% filter(data_folder_name == depID)
-    if(mydeploy$clutch_number == 1 &
-       str_detect(mydeploy$Data_note, "stop", negate = T) &
-       str_detect(mydeploy$Data_note, "sea", negate = T)){#Only first clutch, started on land and that did not stopped
+    mybridge <- weighbridge %>% filter(pit_tag == str_sub(mydeploy$ID[1], start= -6) & season == myseason)
+    if(mydeploy$clutch_number != 2){#Only first clutch
       GPS <- read.table(paste0(datapath,"/",as.character(flist[n])))
       
       #Name the columns
-      names(GPS) <- c("Dt","Latitude","Longitude","Altitude","Speed","Sat","Hdop","Sig")
+      if(myseason == 2018){
+        names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude","Speed","Sat","Hdop","Sig")
+        GPS$Dt <- paste(GPS$Date, GPS$Time)
+        GPS <- GPS[,c(3:10)]
+        GPS <- GPS %>% relocate(Dt, .before = Latitude)
+      }
+      if(myseason >= 2019){
+        names(GPS) <- c("Dt","Latitude","Longitude","Altitude","Speed","Sat","Hdop","Sig")
+      }
       
       #Add new infos
       GPS$Dt <- with_tz(dmy_hms(GPS$Dt, tz="UTC"), tz="Australia/Melbourne")
@@ -33,7 +42,7 @@ GPSCleaner <- function() {
       rownames(GPS) <- 1:nrow(GPS)
       
       #Define colony from map
-      colon <-  145.1503  #colony longititude 145.1496 ~ 145.151
+      colon <-  145.1503  #colony longitude 145.1496 ~ 145.151
       colat <-  -38.5103  #colony latitude -38.5106 ~ -38.509
       GPS$Cdist <- pointDistance(c(colon,colat),cbind(GPS$Longitude,GPS$Latitude),lonlat=T)
       
@@ -42,22 +51,76 @@ GPSCleaner <- function() {
       plot(GPS$Dt,col=topo.colors(nrow(GPS)))
       plot(GPS$Longitude,GPS$Latitude,type="l")
       points(GPS$Longitude,GPS$Latitude,col=topo.colors(nrow(GPS)))
+      points(colon, colat, pch = 10)
       plot(GPS$Cdist~GPS$Dt,col=topo.colors(nrow(GPS)))
       plot(GPS$Cdist,col=topo.colors(nrow(GPS)))
       
       OriGPS <- GPS
       
-      checktrack <- readline(prompt = "Clean this track? (y/n) ")
+      checktrack <- readline(prompt = "Clean this track? (y/n/q) ")
+      if(checktrack == "q"){stop("function stopped")}
       if(checktrack == "y"){
         #Remove manually abnormal positions
         abnormal <- readline(prompt = "Abnormal positions? (y/n) ")
-        while(abnormal == "y"){
-          minlat <- readline(prompt = "Minimal latitude to keep? ")
-          maxlat <- readline(prompt = "Maximal latitude to keep? ")
-          minlon <- readline(prompt = "Minimal longitude to keep? ")
-          maxlon <- readline(prompt = "Maximal longitude to keep? ")
-          GPS <- GPS %>% filter(Latitude >= minlat & Latitude <= max & Longitude >= minlon & Longitude <= maxlon)
-          
+        request <- "dummy"
+        while(abnormal == "y" & request != "abort"){
+          print("Penguin's deployment:")
+          print(mydeploy)
+          print("GPS data:")
+          print(GPS[1,])
+          print("Weighbridge data:")
+          print(mybridge)
+          request <- readline(prompt = "What is the issue? (beg/end/other/abort) ")
+          if(request == "beg"){
+            startime <- readline(prompt = "What should be the new starting date time? (dd/mm/yyyy hh:mm:ss) ")
+            newstart <- data.frame(dmy_hms(startime, tz="Australia/Melbourne"),
+                          colat,
+                          colon,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          date(startime),
+                          GPS$Stage[1],
+                          GPS$Nest[1],
+                          GPS$Sex[1],
+                          0)
+            names(newstart) <- names(GPS)
+            GPS <- rbind(GPS, newstart)
+            GPS <- GPS[with(GPS,order(Dt)),]
+            rownames(GPS) <- 1:nrow(GPS)
+          }
+          if(request == "end"){
+            endtime <- readline(prompt = "What should be the new ending date time? (dd/mm/yyyy hh:mm:ss) ")
+            newend <- data.frame(dmy_hms(endtime, tz="Australia/Melbourne"),
+                          colat,
+                          colon,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          date(endtime),
+                          GPS$Stage[1],
+                          GPS$Nest[1],
+                          GPS$Sex[1],
+                          0)
+            names(newend) <- names(GPS)
+            GPS <- rbind(GPS, newend)
+            GPS <- GPS[with(GPS,order(Dt)),]
+            rownames(GPS) <- 1:nrow(GPS)
+          }
+          if(request == "other"){
+            minlat <- readline(prompt = "Minimal latitude to keep? ")
+            maxlat <- readline(prompt = "Maximal latitude to keep? ")
+            minlon <- readline(prompt = "Minimal longitude to keep? ")
+            maxlon <- readline(prompt = "Maximal longitude to keep? ")
+            GPS <- GPS %>% filter(Latitude >= minlat & Latitude <= max & Longitude >= minlon & Longitude <= maxlon)
+          }
+          if(request == "abort"){
+            next
+            abnormal <- "n"}
           #Plots to check the data
           par(mfrow=c(2,2))
           plot(GPS$Dt,col=topo.colors(nrow(GPS)))
@@ -68,7 +131,9 @@ GPSCleaner <- function() {
           
           abnormal <- readline(prompt = "Abnormal positions? (y/n)")
         }
-        
+        if(request == "abort"){
+          next
+        }
         trips <- readline(prompt = "Multiple trips? (y/n) ")
         if(trips == "y"){
           ntrips <- as.numeric(readline(prompt = "How many? "))
@@ -84,6 +149,7 @@ GPSCleaner <- function() {
             plot(GPS$Dt,col=topo.colors(nrow(GPS)))
             plot(GPS$Longitude,GPS$Latitude,type="l")
             points(GPS$Longitude,GPS$Latitude,col=topo.colors(nrow(GPS)))
+            points(colon, colat, pch=20)
             plot(GPS$Cdist~GPS$Dt,col=topo.colors(nrow(GPS)))
             plot(GPS$Cdist,col=topo.colors(nrow(GPS)))
           }
@@ -239,12 +305,5 @@ GPSCleaner <- function() {
       }
     }
     else{print("GPS track not complete")}
-    # When start or/and end were missing, add points from weigh bridge data, time of departure/arrival, position of weigh bridge # 
-    # {GPS$V2 <- as.character(GPS$V2)
-    #   GPS[nrow(GPS)+1,] <- c("19/11/2018","16:05:00",-38.5103,145.1503,0,0,0,0,0)
-    #   GPS$V2 <- as.factor(GPS$V2)
-    #   GPS$V3 <- as.numeric(GPS$V3)
-    #   GPS$V4 <- as.numeric(GPS$V4)
-    #   tail(GPS)}
   }
 }
