@@ -10,10 +10,6 @@ output:
     theme: yeti
     highlight: kate
     df_print: paged
-  pdf_document:
-    highlight: kate
-    toc: true
-    number_sections: true
 ---
 
 ```{r setup, include=FALSE}

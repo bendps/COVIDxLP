@@ -1,53 +1,101 @@
-#~~~~~#
 rm(list = ls())
 set.seed(2498)
-library(sp);library(crawl);library(tidyverse);library(rnaturalearth)
-library(ggspatial);library(lubridate); library(sf);library(adehabitatLT)
-#~~~~~#
 
-#Load data and map
-tbl_locs <- readRDS("Data/LPPI2020/GPStxt/Cleaned/GPS_G3002MP19.rds")
-esri_ocean <- paste0('https://services.arcgisonline.com/arcgis/rest/services/',
-                     'Ocean/World_Ocean_Base/MapServer/tile/${z}/${y}/${x}.jpeg')
-
-coordinates(tbl_locs) <- ~ Longitude + Latitude
-proj4string(tbl_locs) <- "+init=epsg:4326"
+library(tidyverse);library(lubridate);library(sp);library(sf)
+library(adehabitatLT);library(momentuHMM); library(ggspatial)
 
 
-mytraj <- as.ltraj(xy = tbl_locs@coords,
-                   date = tbl_locs$Dt,
-                   id = tbl_locs$Nest,
-                   typeII = TRUE)
-
-newtraj <- redisltraj(mytraj, 600, type = "time")
-
-#Transform to spatial object 
-sf_locs <- st_as_sf(newtraj[[1]], coords = c("x","y")) %>% 
-  st_set_crs(4326)
-
-#From spatial point to lines
-sf_lines <- sf_locs %>% 
-  dplyr::arrange(Nest, Dt) %>% 
-  sf::st_geometry() %>% 
-  sf::st_cast("MULTIPOINT",ids = as.integer(as.factor(sf_locs$Nest))) %>% 
-  sf::st_cast("MULTILINESTRING") %>% 
-  sf::st_sf(deployid = as.factor(unique(sf_locs$Nest)))
-
-#Project for the australian zone (australia albers)
-sf_locs <- sf::st_transform(sf_locs, 3577)
-sf::st_geometry(sf_locs)
+#1. Load####
+mysample <- list.files("Data/LPPI2019/GPStxt/Cleaned", full.names = TRUE, pattern = ".rds")
+list_gps <- lapply(mysample, readRDS)
+track_names <- tools::file_path_sans_ext(list.files("Data/LPPI2019/GPStxt/Cleaned", pattern = ".rds"))
+names(list_gps) <- track_names
 
 
-ggplot() + 
-  annotation_map_tile(type = esri_ocean,zoomin = 1,progress = "none") +
-  layer_spatial(sf_locs, size = 0.75) +
-  scale_x_continuous(expand = expansion(mult = c(.6, .6))) +
-  scale_color_brewer(palette = "Dark2") +
-  annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
-  theme(legend.position = "none")
-
-
-
-
-
-
+for (i in 1:length(list_gps)) {
+  lpproj <- list_gps[[i]]
+  
+  #head(lpproj)
+  
+  #world <- rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
+  
+  #2. Project the original data####
+  # Prepare CRS Strings
+  # CRS for WGS84
+  proj.latlon <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+  
+  #CRS string for australia
+  ESPG <- x<-rgdal::make_EPSG()
+  myESPG <- ESPG[grep("GDA94 / Australian Albers", ESPG$note),]
+  proj.aeqd <- myESPG$prj4
+  
+  #Transform to spatial object 
+  coordinates(lpproj) <- ~ Longitude + Latitude
+  
+  # Define CRS
+  proj4string(lpproj) <- CRS(proj.latlon)
+  
+  # Project the data
+  lpproj <- spTransform(lpproj, CRS(proj.aeqd))
+  
+  #Prepare for momentuHMM
+  obstimes <- as.numeric(lpproj$Dt) / 3600 # convert time to numeric hours
+  lnError <- crawl::argosDiag2Cov(50,50,0) # assume 50m isotropic error ellipse
+  lpdata <- data.frame(ID=1,
+                       time=obstimes,
+                       x=lpproj@coords[, 1],
+                       y=lpproj@coords[, 2],
+                       ln.sd.x=lnError$ln.sd.x, 
+                       ln.sd.y = lnError$ln.sd.y, 
+                       error.corr= lnError$error.corr)
+  
+  #Check the track
+  # ori_plot <- ggplot(data = world) + 
+  #   geom_sf() +
+  #   geom_path(data = lpdata, aes(x, y), color = "#440154FF") +
+  #   geom_point(data = lpdata, aes(x, y), color = "#440154FF", alpha = 0.5) +
+  #   annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  #   coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(lpdata$x), max(lpdata$x)), ylim = c(min(lpdata$y), max(lpdata$y))) +
+  #   labs(title = "original track") +
+  #   theme_bw() +
+  #   theme(panel.grid = element_line(color = "#C4C4C4"))
+  # 
+  # print(ori_plot)
+  
+  #3. MomentuHMM Spatial interpolation
+  crwOut <- crawlWrap(lpdata,theta=c(6.5,-.1),fixPar=c(1,1,NA,NA),
+                      err.model = list(x=~ln.sd.x-1,y=~ln.sd.y-1,rho=~error.corr),
+                      timeStep=0.25, # predict at 15 min time steps
+                      attempts=10)
+  
+  correc_mom <- crwOut$crwPredict
+  
+  # mom_plot <- ggplot(data = world) + 
+  #   geom_sf() +
+  #   geom_path(data = correc_mom, aes(mu.x, mu.y), color = "#FDE725FF") +
+  #   geom_point(data = correc_mom, aes(mu.x, mu.y), color = "#FDE725FF", alpha = 0.5) +
+  #   annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  #   coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(lpdata$x), max(lpdata$x)), ylim = c(min(lpdata$y), max(lpdata$y))) +
+  #   labs(title = "momentuHMM track") +
+  #   theme_bw() +
+  #   theme(panel.grid = element_line(color = "#C4C4C4"))
+  # 
+  # mom_plot
+  # 
+  # over_plot <- ggplot(data = world) +
+  #   geom_sf() +
+  #   geom_path(data = correc_mom, aes(mu.x, mu.y), color = "#FDE725FF") +
+  #   geom_point(data = correc_mom, aes(mu.x, mu.y), color = "#FDE725FF", alpha = 0.5) +
+  #   geom_path(data = lpdata, aes(x, y), color = "#440154FF") +
+  #   geom_point(data = lpdata, aes(x, y), color = "#440154FF", alpha = 0.5) +
+  #   annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  #   coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(lpdata$x), max(lpdata$x)), ylim = c(min(lpdata$y), max(lpdata$y))) +
+  #   labs(title = "overlaped track") +
+  #   theme_bw() +
+  #   theme(panel.grid = element_line(color = "#C4C4C4"))
+  # 
+  # over_plot
+  
+  correc_mom$dt <- with_tz(as_datetime(correc_mom$time * 3600), tz = "Australia/Melbourne")
+  saveRDS(correc_mom, paste0("Data/LPPI2019/GPStxt/Cleaned/Interpolated/", names(list_gps)[i], ".rds"))
+}

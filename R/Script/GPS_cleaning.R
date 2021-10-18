@@ -70,7 +70,7 @@ GPSCleaner <- function() {
           print(GPS[1,])
           print("Weighbridge data:")
           print(mybridge)
-          request <- readline(prompt = "What is the issue? (beg/end/other/abort) ")
+          request <- readline(prompt = "What is the issue? (beg/end/remove/keep/abort) ")
           if(request == "beg"){
             startime <- readline(prompt = "What should be the new starting date time? (dd/mm/yyyy hh:mm:ss) ")
             newstart <- data.frame(dmy_hms(startime, tz="Australia/Melbourne"),
@@ -111,12 +111,24 @@ GPSCleaner <- function() {
             GPS <- GPS[with(GPS,order(Dt)),]
             rownames(GPS) <- 1:nrow(GPS)
           }
-          if(request == "other"){
-            minlat <- readline(prompt = "Minimal latitude to keep? ")
-            maxlat <- readline(prompt = "Maximal latitude to keep? ")
-            minlon <- readline(prompt = "Minimal longitude to keep? ")
-            maxlon <- readline(prompt = "Maximal longitude to keep? ")
-            GPS <- GPS %>% filter(Latitude >= minlat & Latitude <= max & Longitude >= minlon & Longitude <= maxlon)
+          if(request == "keep"){
+            minlat <- as.numeric(readline(prompt = "Minimal latitude to keep? "))
+            maxlat <- as.numeric(readline(prompt = "Maximal latitude to keep? "))
+            minlon <- as.numeric(readline(prompt = "Minimal longitude to keep? "))
+            maxlon <- as.numeric(readline(prompt = "Maximal longitude to keep? "))
+            GPS <- GPS %>% dplyr::filter(Latitude >= minlat & Latitude <= maxlat & Longitude >= minlon & Longitude <= maxlon)
+            GPS <- GPS[with(GPS,order(Dt)),]
+            rownames(GPS) <- 1:nrow(GPS)
+          }
+          if(request == "remove"){
+            par(mfrow=c(1,1))
+            minlim <- as.numeric(readline(prompt = "Minimal row n° to display? "))
+            maxlim <- as.numeric(readline(prompt = "Maximal row n° to display? "))
+            plot(GPS$Cdist[minlim:maxlim],col=topo.colors(nrow(GPS)))
+            removed_row <- as.numeric(readline(prompt = "Index of the row to remove? "))
+            GPS <- GPS[-removed_row,]
+            GPS <- GPS[with(GPS,order(Dt)),]
+            rownames(GPS) <- 1:nrow(GPS)
           }
           if(request == "abort"){
             next
@@ -129,11 +141,12 @@ GPSCleaner <- function() {
           plot(GPS$Cdist~GPS$Dt,col=topo.colors(nrow(GPS)))
           plot(GPS$Cdist,col=topo.colors(nrow(GPS)))
           
-          abnormal <- readline(prompt = "Abnormal positions? (y/n)")
+          abnormal <- readline(prompt = "Abnormal positions? (y/n) ")
         }
         if(request == "abort"){
           next
         }
+        OriGPS <- GPS
         trips <- readline(prompt = "Multiple trips? (y/n) ")
         if(trips == "y"){
           ntrips <- as.numeric(readline(prompt = "How many? "))
@@ -180,8 +193,9 @@ GPSCleaner <- function() {
             #print(nrow(GPS))
             
             #To check the deletion
-            par(mfrow=c(1,1))
-            plot(GPS$Cdist)
+            par(mfrow=c(1,2))
+            plot(GPS$Cdist~GPS$Dt,col=topo.colors(nrow(GPS)))
+            plot(GPS$Cdist,col=topo.colors(nrow(GPS)))
             
             satisfaction <- readline(prompt = "Satisfied? (y/n) ")
             if(satisfaction != "y"){
