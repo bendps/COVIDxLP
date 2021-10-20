@@ -10,20 +10,24 @@ getmode <- function(v){
 }
 
 acc_path <- "Data/LPPI2019/ACCcsv"
-gps_path <- "Data/LPPI2019/GPStxt/Cleaned"
-
 my_acc <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".csv")) #Get the acc filenames
-my_gps <- tools::file_path_sans_ext(list.files(gps_path, pattern = ".rds")) #Get the GPS filenames
-my_gps <- substr(my_gps,5,nchar(my_gps)) #Extract the track ID from GPS filenames
+
+my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds")
+my_gps <- names(table(my_global$crwPredict$bird_ID)) #Extract the bird ID 
 
 to_load <- intersect(my_acc, my_gps) #Acc files to load to extract the depth because we have a matching clean GPS track
 
+#Update the gps list
+my_global$crwPredict <- my_global$crwPredict[which(my_global$crwPredict$bird_ID %in% to_load),]
+my_global$crwFits <- my_global$crwFits[which(names(my_global$crwFits) %in% names(table(my_global$crwPredict$ID)))]
+saveRDS(my_global, paste0("Data/LPPI2019/Interpolated_GPS_2019.rds"))
+
 for (i in 1:length(to_load)) {
   axydata <- read.csv(paste0(acc_path,"/",to_load[i],".csv"))
-  axydata <- axydata %>% select(TagID, Timestamp, Pressure) %>% filter(!is.na(Pressure))
+  axydata <- axydata %>% dplyr::select(TagID, Timestamp, Pressure) %>% filter(!is.na(Pressure))
   mymode <- getmode(axydata$Pressure)
   axydata$Depth <- (axydata$Pressure-mymode)/100
-  axydata <- axydata %>% select(TagID, Timestamp, Depth)
+  axydata <- axydata %>% dplyr::select(TagID, Timestamp, Depth)
   saveRDS(axydata, paste0("Data/LPPI2019/Depth/", to_load[i], ".rds"))
   print(paste0(i, "/", length(to_load)))
 }
@@ -32,7 +36,7 @@ for (i in 1:length(to_load)) {
 depth_path <- "Data/LPPI2019/Depth"
 depth_files <- list.files(depth_path, pattern = ".rds")
 
-for (j in 18:length(depth_files)) {
+for (j in 14:length(depth_files)) {
   print(depth_files[j])
   
   depth_data <- readRDS(paste0(depth_path,"/",depth_files[j]))
@@ -111,25 +115,57 @@ for (j in 18:length(depth_files)) {
 #Step 3: Synch with the GPS####
 library(data.table);library(ggspatial)
 
-mygps <- readRDS("Data/LPPI2019/GPStxt/Cleaned/Interpolated/GPS_G3013FP4.rds")
-mydive <- readRDS("Data/LPPI2019/Depth/corrected/G3013FP4.rds")
+depth_path <- "Data/LPPI2019/Depth/corrected"
 
-mingps <- which(mydive$Timestamp == mygps$dt[1])
-maxgps <- which(mydive$Timestamp == mygps$dt[length(mygps$dt)])
-filtered_dive <- mydive[mingps:maxgps,]
+my_depth <- tools::file_path_sans_ext(list.files(depth_path, pattern = ".rds")) #Get the depth filenames
+my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds")
+rownames(my_global$crwPredict) <- 1:nrow(my_global$crwPredict)
 
-mygps$prop_dive <- NA
-mygps$max_depth <- NA
+my_gps <- names(table(my_global$crwPredict$bird_ID)) #Extract the bird ID 
 
-for(k in 2:nrow(mygps)){
-  start_dive <- mygps$dt[k-1]
-  end_dive <- mygps$dt[k]
+to_load <- intersect(my_depth, my_gps)
+loop_index <- as.numeric(rownames(my_global$crwPredict[!duplicated(my_global$crwPredict$ID),]))
+
+my_global$crwPredict$prop_dive <- NA
+my_global$crwPredict$max_depth <- NA
+
+j <- 1 #loop index count
+
+for (i in loop_index) {
+  if(i != loop_index[length(loop_index)]){
+    last_ping <- my_global$crwPredict[loop_index[j+1]-1,]
+  }else{
+    last_ping <- my_global$crwPredict[nrow(my_global$crwPredict),]
+  }
+
+  trackID <- my_global$crwPredict$bird_ID[i]
+  mydive <- readRDS(paste0(depth_path,"/",trackID,".rds"))
+
+  mymin <- i
+  mingps <- which(mydive$Timestamp == my_global$crwPredict$dt[mymin])
+  while (length(mingps) == 0) {
+    mymin <- mymin + 1
+    mingps <- which(mydive$Timestamp == my_global$crwPredict$dt[mymin])
+  }
   
-  the_dive <- filtered_dive %>% filter(Timestamp > start_dive & Timestamp <= end_dive)
-  mygps$prop_dive[k] <- sum(the_dive$dive)/nrow(the_dive)
-  mygps$max_depth[k] <- max(the_dive$correc_depth)
+  maxgps <- which(mydive$Timestamp == last_ping$dt)
+  filtered_dive <- mydive[mingps:maxgps,]
+  
+  for (k in (mymin+1):as.numeric(row.names(last_ping))) {
+    start_dive <- my_global$crwPredict$dt[k-1]
+    end_dive <- my_global$crwPredict$dt[k]
+    
+    the_dive <- filtered_dive %>% filter(Timestamp > start_dive & Timestamp <= end_dive)
+    my_global$crwPredict$prop_dive[k] <- sum(the_dive$dive)/nrow(the_dive)
+    my_global$crwPredict$max_depth[k] <- max(the_dive$correc_depth)
+  }
+  print(paste0(j,"/",length(loop_index)))
+  j <- j+1
 }
 
+saveRDS(my_global, "Data/LPPI2019/Interpolated_GPS_Depth_2019.rds")
+
+#Plot
 world <- rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
 
 #CRS string for australia
@@ -138,8 +174,8 @@ myESPG <- ESPG[grep("GDA94 / Australian Albers", ESPG$note),]
 proj.aeqd <- myESPG$prj4
 
 track_plot <- ggplot(data = world) +
-  #geom_sf() +
-  geom_path(data = mygps, aes(mu.x, mu.y)) +
+  geom_sf() +
+  #geom_path(data = mygps, aes(mu.x, mu.y)) +
   geom_point(data = mygps, aes(mu.x, mu.y, color = prop_dive)) +
   annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
   coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
@@ -147,14 +183,15 @@ track_plot <- ggplot(data = world) +
   theme_bw() +
   theme(panel.grid = element_line(color = "#C4C4C4"))
 
-track_plot
+speed_plot <- ggplot(data = world) +
+  geom_sf() +
+  #geom_path(data = mygps, aes(mu.x, mu.y)) +
+  geom_point(data = mygps, aes(mu.x, mu.y, color = speed/1000)) +
+  annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
+  labs(title = "Interpolated GPS track with dive information") +
+  theme_bw() +
+  scale_color_continuous(type = "viridis") +
+  theme(panel.grid = element_line(color = "#C4C4C4"))
 
-
-
-
-
-#NEED to join by DT and then to summarise to get the proportion of time spent diving in the interval
-# dates$group <- cumsum(ifelse(difftime(dates$datecol,
-#                                       shift(dates$datecol, fill = dates$datecol[1]), 
-#                                       units = "days") >= 5 
-#                              ,1, 0)) + 1
+cowplot::plot_grid(track_plot, speed_plot)
