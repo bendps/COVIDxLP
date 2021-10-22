@@ -1,7 +1,9 @@
 #~~~~~#
 rm(list = ls())
 set.seed(2498)
-library(sp);library(scales);library(raster);library(viridis);library(proj4);library(tidyverse);library(lubridate);library(suncalc)
+library(sp);library(scales);library(raster)
+library(viridis);library(proj4);library(tidyverse)
+library(lubridate);library(suncalc)
 #~~~~~#
 
 #Input parameters
@@ -167,6 +169,7 @@ for(n in 26:length(flist)){
         if(request == "abort"){
           next
           abnormal <- "n"}
+        
         #Plots to check the data
         par(mfrow=c(2,2))
         plot(GPS$Dt,col=topo.colors(nrow(GPS)))
@@ -218,6 +221,7 @@ for(n in 26:length(flist)){
         if(ntrips > 1){
           print(paste0("Trip n°", q))
           GPS <- OriGPS
+          
           #Plots to check the data
           par(mfrow=c(2,2))
           plot(GPS$Dt,col=topo.colors(nrow(GPS)))
@@ -246,16 +250,13 @@ for(n in 26:length(flist)){
           
           delstart <- as.numeric(readline(prompt = "Delete how many data points at the start? "))
           delend <- as.numeric(readline(prompt = "Delete how many data points at the end? "))
-          #print(nrow(GPS))
           
           # Delete before the trip
           GPS <- GPS[delstart:nrow(GPS),]
           rownames(GPS) <- 1:nrow(GPS)
-          #print(nrow(GPS))
           
           # Delete after the trip
           GPS <- GPS[1:(nrow(GPS)-delend),]
-          #print(nrow(GPS))
           
           #To check the deletion
           par(mfrow=c(1,2))
@@ -367,15 +368,9 @@ for(n in 26:length(flist)){
         plot(GPS$Dt,GPS$Mspeed)
         print(table(is.na(GPS)))
         
-        #remove manually
-        # GPS<-GPS[-53,]
-        # GPS<-GPS[-(168:172),]
-        # GPS<-GPS[c(-4629,-4626,-4623,-4621,-4619),]
-        
-        #SAVE GPS data as RData (& csv)
+        #SAVE GPS data as RData
         if(ntrips == 1){
           saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,".rds"))
-          #write.csv(GPS, file=paste("GPS_",GPS$Stage[1],GPS$Nest[1],GPS$Sex[1],".csv",sep=""), row.names = F, quote = F) 
         }
         else{
           saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,"_",q,".rds"))

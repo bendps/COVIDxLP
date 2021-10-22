@@ -1,28 +1,31 @@
+#~~~~~#
 rm(list = ls())
-set.seed(456)
+set.seed(2498)
+library(tidyverse);library(lubridate)
+library(viridis);library(tools);library(rnaturalearth)
+library(data.table);library(ggspatial)
+#~~~~~#
 
-library(tidyverse);library(lubridate);library(viridis)
-
-#Step 1: Extract the depth from the axy data####
-getmode <- function(v){
+# Step 1: Extract the depth from the axy data####
+getmode <- function(v){# Function to get the mode of the pressure
   uniqv <- unique(v)
   uniqv[which.max(tabulate(match(v,uniqv)))]
 }
 
-acc_path <- "Data/LPPI2019/ACCcsv"
-my_acc <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".csv")) #Get the acc filenames
+acc_path <- "Data/LPPI2019/ACCcsv" # Path of acc files
+my_acc <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".csv")) # Get the acc filenames
 
-my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds")
-my_gps <- names(table(my_global$crwPredict$bird_ID)) #Extract the bird ID 
+my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds") # File of interpolated tracks
+my_gps <- names(table(my_global$crwPredict$bird_ID)) # Extract the bird ID 
 
-to_load <- intersect(my_acc, my_gps) #Acc files to load to extract the depth because we have a matching clean GPS track
+to_load <- intersect(my_acc, my_gps) # Acc files to load to extract the depth because we have a matching clean GPS track
 
-#Update the gps list
+# Update the gps list
 my_global$crwPredict <- my_global$crwPredict[which(my_global$crwPredict$bird_ID %in% to_load),]
 my_global$crwFits <- my_global$crwFits[which(names(my_global$crwFits) %in% names(table(my_global$crwPredict$ID)))]
 saveRDS(my_global, paste0("Data/LPPI2019/Interpolated_GPS_2019.rds"))
 
-for (i in 1:length(to_load)) {
+for (i in 1:length(to_load)) {# Extract and save the depth
   axydata <- read.csv(paste0(acc_path,"/",to_load[i],".csv"))
   axydata <- axydata %>% dplyr::select(TagID, Timestamp, Pressure) %>% filter(!is.na(Pressure))
   mymode <- getmode(axydata$Pressure)
@@ -32,7 +35,7 @@ for (i in 1:length(to_load)) {
   print(paste0(i, "/", length(to_load)))
 }
 
-#Step 2: Correct the 0m value of the depth####
+# Step 2: Correct the 0m value of the depth####
 depth_path <- "Data/LPPI2019/Depth"
 depth_files <- list.files(depth_path, pattern = ".rds")
 
@@ -43,14 +46,8 @@ for (j in 14:length(depth_files)) {
   
   depth_data$Timestamp <- with_tz(dmy_hms(depth_data$Timestamp, tz = "UTC"), tz="Australia/Melbourne")
   
-  #remove first and last value because of errors
+  # Remove first and last value because of errors
   depth_data <- depth_data[c(-1, -length(depth_data)),]
-  
-  # ori_plot <- ggplot(depth_data, aes(Timestamp, Depth)) +
-  #               geom_point() +
-  #               ylim(NA,1)
-  # 
-  # plot(ori_plot)
 
   satisfaction <- "n"
   mintime <- NA
@@ -98,12 +95,11 @@ for (j in 14:length(depth_files)) {
   correct_plot <- ggplot(depth_data) +
                     geom_point(aes(Timestamp, Depth)) +
                     geom_point(aes(Timestamp, correc_depth), color = viridis(1), alpha = 0.5) +
-                    #xlim(mintime, maxtime) +
                     ylim(NA, maxdepth)
   
   print(correct_plot)
   
-  depth_data$dive <- ifelse(depth_data$correc_depth >= 2, 1, 0) #Dive is 2M
+  depth_data$dive <- ifelse(depth_data$correc_depth >= 2, 1, 0) # Dive is 2M
   
   saveRDS(depth_data, paste0(depth_path, "/corrected/", depth_files[j]))
   
@@ -112,16 +108,15 @@ for (j in 14:length(depth_files)) {
 
 }
 
-#Step 3: Synch with the GPS####
-library(data.table);library(ggspatial)
+# Step 3: Synch with the GPS####
 
 depth_path <- "Data/LPPI2019/Depth/corrected"
 
-my_depth <- tools::file_path_sans_ext(list.files(depth_path, pattern = ".rds")) #Get the depth filenames
+my_depth <- tools::file_path_sans_ext(list.files(depth_path, pattern = ".rds")) # Get the depth filenames
 my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds")
 rownames(my_global$crwPredict) <- 1:nrow(my_global$crwPredict)
 
-my_gps <- names(table(my_global$crwPredict$bird_ID)) #Extract the bird ID 
+my_gps <- names(table(my_global$crwPredict$bird_ID)) # Extract the bird ID 
 
 to_load <- intersect(my_depth, my_gps)
 loop_index <- as.numeric(rownames(my_global$crwPredict[!duplicated(my_global$crwPredict$ID),]))
@@ -129,7 +124,7 @@ loop_index <- as.numeric(rownames(my_global$crwPredict[!duplicated(my_global$crw
 my_global$crwPredict$prop_dive <- NA
 my_global$crwPredict$max_depth <- NA
 
-j <- 1 #loop index count
+j <- 1 # Loop index count
 
 for (i in loop_index) {
   if(i != loop_index[length(loop_index)]){
@@ -165,17 +160,16 @@ for (i in loop_index) {
 
 saveRDS(my_global, "Data/LPPI2019/Interpolated_GPS_Depth_2019.rds")
 
-#Plot
+# (Optional: Plot)####
 world <- rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
 
-#CRS string for australia
+# CRS string for Australia
 ESPG <- x<-rgdal::make_EPSG()
 myESPG <- ESPG[grep("GDA94 / Australian Albers", ESPG$note),]
 proj.aeqd <- myESPG$prj4
 
 track_plot <- ggplot(data = world) +
   geom_sf() +
-  #geom_path(data = mygps, aes(mu.x, mu.y)) +
   geom_point(data = mygps, aes(mu.x, mu.y, color = prop_dive)) +
   annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
   coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
@@ -185,7 +179,6 @@ track_plot <- ggplot(data = world) +
 
 speed_plot <- ggplot(data = world) +
   geom_sf() +
-  #geom_path(data = mygps, aes(mu.x, mu.y)) +
   geom_point(data = mygps, aes(mu.x, mu.y, color = speed/1000)) +
   annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
   coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
