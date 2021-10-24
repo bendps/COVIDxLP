@@ -2,25 +2,38 @@
 rm(list = ls())
 set.seed(2498)
 library(tidyverse);library(lubridate)
-library(sp);library(sf);library(adehabitatLT)
+library(sp);library(sf)
 library(momentuHMM); library(ggspatial)
 #~~~~~#
 
+myseason <- 2014
+
 # 1. Load####
 # Merge all tracks
-track_path <- "Data/LPPI2019/GPStxt/Cleaned"
+track_path <- paste0("Data/LPPI",myseason,"/GPS/Cleaned")
 track_list <- list.files(track_path, ".rds")
 myglobal <- data.frame()
 
 for (i in 1:length(track_list)) {
   myGPS <- readRDS(paste0(track_path,"/", track_list[i]))
-  myGPS$track_ID <- substr(track_list[i],5,nchar(track_list[i])-4)
+  myGPS$track_ID <- substr(track_list[i],5,nchar(track_list[i])-4) 
   myglobal <- rbind(myglobal, myGPS)
 }
 
 # Add bird ID
 myglobal$bird_ID <- str_extract(myglobal$track_ID, "^.*(?=(_))")
 myglobal$bird_ID[which(is.na(myglobal$bird_ID))] <- myglobal$track_ID[which(is.na(myglobal$bird_ID))]
+
+# For 2017/2016
+if(myseason == 2017 | myseason == 2016){
+  for (k in 1:nrow(myglobal)) {
+    if(grepl("_",substr(myglobal$track_ID[k], nchar(myglobal$track_ID[k])-1, nchar(myglobal$track_ID[k]))) == FALSE){
+      myglobal$bird_ID[k] <- myglobal$track_ID[k]
+    }
+  }
+  myglobal$bird_ID[!which(!grepl("_",substr(myglobal$track_ID, nchar(myglobal$track_ID)-1, nchar(myglobal$track_ID))))] <- myglobal$track_ID
+  
+}
 
 # Interpolate
 lpproj <- myglobal
@@ -73,4 +86,10 @@ for(k in 1:nrow(crwOut$crwPredict)){
   }
 }
 
-saveRDS(crwOut, paste0("Data/LPPI2019/Interpolated_GPS_2019.rds"))
+
+
+saveRDS(crwOut, paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds"))
+
+plot(crwOut, compact = T)
+
+

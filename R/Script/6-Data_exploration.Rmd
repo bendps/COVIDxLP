@@ -1,0 +1,511 @@
+---
+title: "Data exploration"
+author: "Benjamin Dupuis"
+date: "04/11/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: yeti
+    highlight: kate
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, echo = FALSE)
+
+```
+
+```{r preambule, echo = FALSE}
+rm(list = ls())
+set.seed(2498)
+library(tidyverse);library(cowplot);library(lubridate)
+library(sp);library(sf)
+library(momentuHMM); library(ggspatial)
+library(gridExtra); library(plotly); library(viridis)
+library(raster); library(suncalc)
+```
+
+```{r load, echo=FALSE}
+weighbridge <- readRDS("Data/weighbridge.rds")
+global_count <- readRDS("Data/global_count.rds")
+isotope <- read.csv("Data/lp_isotope.csv", sep = ";")
+```
+
+# Diet
+
+**Note**: Need to ask Claire if the season correspond to calendar year or to penguin year.
+In these plot, the stable isotope data are separated depending on the season. Note that the "global" ellipse regroup every year, not excluding the one displayed.  
+
+```{r isotope}
+names(isotope) <- tolower(names(isotope))
+isotope <- isotope %>% filter(year >= 2010)
+mypalette <- viridis(2)
+old_isotope <- isotope
+
+#Do every stage one by one
+#First Incubation
+isotope <- old_isotope %>% dplyr::filter(b.stage == "Incubation")
+global_isotope <- isotope[,-1]
+
+iso_plot <- ggplot(data = isotope, aes(x = delta.c, y = delta.n)) +
+  geom_point(color = mypalette[1], data = global_isotope, alpha = 0.5) +
+  stat_ellipse(color = mypalette[1],  data = global_isotope) +
+  geom_point(alpha = 0.8, color = mypalette[2], aes(frame = year)) +
+  stat_ellipse(color = mypalette[2], aes(frame = year)) +
+  theme_bw() +
+  labs(title = "Incubation")
+
+fig <- ggplotly(iso_plot)
+
+
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Year ", font = list(color="black")))
+
+fig
+
+#Guard
+isotope <- old_isotope %>% dplyr::filter(b.stage == "Guard")
+global_isotope <- isotope[,-1]
+
+iso_plot <- ggplot(data = isotope, aes(x = delta.c, y = delta.n)) +
+  geom_point(color = mypalette[1], data = global_isotope, alpha = 0.5) +
+  stat_ellipse(color = mypalette[1],  data = global_isotope) +
+  geom_point(alpha = 0.8, color = mypalette[2], aes(frame = year)) +
+  stat_ellipse(color = mypalette[2], aes(frame = year)) +
+  theme_bw() +
+  labs(title = "Guard")
+
+fig <- ggplotly(iso_plot)
+
+
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Year ", font = list(color="black")))
+
+fig
+
+#Post guard
+isotope <- old_isotope %>% dplyr::filter(b.stage == "Post-guard")
+global_isotope <- isotope[,-1]
+
+iso_plot <- ggplot(data = isotope, aes(x = delta.c, y = delta.n)) +
+  geom_point(color = mypalette[1], data = global_isotope, alpha = 0.5) +
+  stat_ellipse(color = mypalette[1],  data = global_isotope) +
+  geom_point(alpha = 0.8, color = mypalette[2], aes(frame = year)) +
+  stat_ellipse(color = mypalette[2], aes(frame = year)) +
+  theme_bw() +
+  labs(title = "Post-guard")
+
+fig <- ggplotly(iso_plot)
+
+
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Year ", font = list(color="black")))
+
+fig
+
+#Pre-breeding
+isotope <- old_isotope %>% dplyr::filter(b.stage == "Pre-breeding")
+global_isotope <- isotope[,-1]
+
+iso_plot <- ggplot(data = isotope, aes(x = delta.c, y = delta.n)) +
+  geom_point(color = mypalette[1], data = global_isotope, alpha = 0.5) +
+  stat_ellipse(color = mypalette[1],  data = global_isotope) +
+  geom_point(alpha = 0.8, color = mypalette[2], aes(frame = year)) +
+  stat_ellipse(color = mypalette[2], aes(frame = year)) +
+  theme_bw() + 
+  labs(title = "Pre-breeding")
+
+fig <- ggplotly(iso_plot)
+
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Year ", font = list(color="black")))
+
+fig
+
+```
+
+# Beach counts
+
+Here, the counts correspond to the penguin year, from June to June, not the calendar year. **Still need to add the 2021 data if available**.  
+
+```{r counts}
+global_count$pengu_season <- ifelse(month(global_count$date) < 6, global_count$year-1, global_count$year)
+
+yearly_count <- global_count %>% filter(!is.na(total_penguins)) %>%
+  group_by(pengu_season) %>%
+  summarise(mean_pengu = mean(total_penguins), sd_pengu = sd(total_penguins), mean_spec = mean(spectators), sd_spec = sd(spectators), count = n())
+
+yearly_count$se_pengu <- yearly_count$sd_pengu/sqrt(yearly_count$count)
+yearly_count$se_spec <- yearly_count$sd_spec/sqrt(yearly_count$count)
+
+pengu_plot <- ggplot(data = yearly_count, aes(x = as.factor(pengu_season), y = mean_pengu, ymin = mean_pengu - se_pengu, ymax = mean_pengu + se_pengu)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar() +
+  geom_hline(yintercept = mean(global_count$total_penguins, na.rm = T), linetype = "dashed") +
+  theme_bw()
+
+#plot(pengu_plot)
+
+spec_plot <- ggplot(data = yearly_count, aes(x = as.factor(pengu_season), y = mean_spec, ymin = mean_spec - se_spec, ymax = mean_spec + se_spec)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar() +
+  geom_hline(yintercept = mean(global_count$spectators, na.rm = T), linetype = "dashed") +
+  theme_bw()
+
+#plot(spec_plot)
+plot_grid(pengu_plot, spec_plot, ncol = 1)
+```
+
+# Weighbridge data
+
+Again here, the season correspond to penguin year. The trip duration is based on the hour in and out of the weighbridge data.  
+
+```{r weighbridge}
+weighbridge <- weighbridge %>% filter(season >=2010)
+weighbridge$covid <- ifelse(weighbridge$season == 2020, T, F)
+
+
+weight_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = MassGain)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  facet_grid(~breeding_stage) +
+  labs(y = "Mass gain",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = 45))
+
+plot(weight_plot)
+
+weightin_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = weight_in)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  facet_grid(~breeding_stage) +
+  labs(y = "Weight in",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = 45))
+
+plot(weightin_plot)
+
+weightout_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = weight_out)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  facet_grid(~breeding_stage) +
+  labs(y = "Weight out",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = 45))
+  
+plot(weightout_plot)
+
+weighbridge$trip_duration <- weighbridge$localtime_in - weighbridge$localtime_out
+
+trip_dur_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = trip_duration)) +
+  #geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  facet_grid(~breeding_stage) +
+  labs(y = "Trip duration (hour)",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = 45))
+
+plot(trip_dur_plot)
+
+
+#Calculate arrival and leaving time relatively to sunset/sunrise
+weighbridge$hour_out <- as.POSIXct(format(strptime(weighbridge$localtime_out, "%Y-%m-%d %H:%M:%S"), "%H:%M:%S"), format="%H:%M:%S")
+weighbridge$hour_in <- as.POSIXct(format(strptime(weighbridge$localtime_in, "%Y-%m-%d %H:%M:%S"), "%H:%M:%S"), format="%H:%M:%S")
+
+colon <-  145.1503  #colony longitude 145.1496 ~ 145.151
+colat <-  -38.5103  #colony latitude -38.5106 ~ -38.509
+
+weighbridge$localtime_out <- force_tz(weighbridge$localtime_out, tz = "Australia/Melbourne")
+weighbridge$localtime_in <- force_tz(weighbridge$localtime_in, tz = "Australia/Melbourne")
+
+weighbridge$sunrise <- getSunlightTimes(data = tibble(date = date(weighbridge$localtime_out), lat = colat, lon = colon), keep = "sunrise", tz = "Australia/Melbourne")[,4]
+weighbridge$sunset <- getSunlightTimes(data = tibble(date = date(weighbridge$localtime_in), lat = colat, lon = colon), keep = "sunset", tz = "Australia/Melbourne")[,4]
+
+weighbridge$diff_time_out <- weighbridge$localtime_out - weighbridge$sunrise
+weighbridge$diff_time_in <- weighbridge$localtime_in - weighbridge$sunset
+
+#Use numeric values in minutes
+weighbridge$diff_time_in <- as.numeric(weighbridge$diff_time_in, units = "mins")
+weighbridge$diff_time_out <- as.numeric(weighbridge$diff_time_out, units = "mins")
+
+
+leave_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = diff_time_out)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  coord_cartesian(ylim = c(-500, 0)) +
+  geom_hline(yintercept = mean(weighbridge$diff_time_out), linetype = "dashed") +
+  facet_grid(~breeding_stage) +
+  labs(y = "Time out relative to sunrise (min)",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = 45))
+
+plot(leave_plot)
+
+arrive_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = diff_time_in)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  coord_cartesian(ylim = c(-50, 350)) +
+  geom_hline(yintercept = mean(weighbridge$diff_time_in), linetype = "dashed") +
+  facet_grid(~breeding_stage) +
+  labs(y = "Time in relative to sunset (min)",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = 45))
+
+plot(arrive_plot)
+  
+```
+
+# Gps tracks
+
+We still have these weird pattern for 2015-2017 that need to be checked.  
+
+```{r gps}
+my_gps <- list.files("Data/Global_GPS", pattern = "*.rds")
+
+my_global <- readRDS(paste0("Data/Global_GPS/", my_gps[1]))
+my_global$crwPredict$season <- 2010
+
+for (k in 2:length(my_gps)) {
+  year_k <- readRDS(paste0("Data/Global_GPS/", my_gps[k]))
+  year_k$crwPredict$season <- 2009+k
+  my_global$crwFits <- c(my_global$crwFits, year_k$crwFits)
+  my_global$crwPredict <- rbind(my_global$crwPredict, year_k$crwPredict)
+}
+
+world <- rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
+mygps <- my_global$crwPredict
+mygps$covid <- ifelse(mygps$season == 2020, T, F)
+
+#Add the breeding stage
+mygps$breeding_stage <- substr(mygps$bird_ID, 1, 1) #In most cases, the first letter of the ID is the breeding stage
+#If not, need to use the original file name (only for 2017)
+original_names <- list.files("Data/LPPI2017/GPS", pattern = "*.csv")
+index_no_stage <- which(mygps$breeding_stage %in% c("1","3","4"))
+for (i in index_no_stage) {
+  mygps$breeding_stage[i] <- substr(original_names[grep(mygps$bird_ID[i], original_names)],1,1)
+}
+
+# CRS string for Australia
+ESPG <- x<-rgdal::make_EPSG()
+myESPG <- ESPG[grep("GDA94 / Australian Albers", ESPG$note),]
+proj.aeqd <- myESPG$prj4
+
+mypalette <- viridis(2)
+
+#1. Guard ####
+subgps <- mygps[which(mygps$breeding_stage == "G"),]
+gps_plot_point <- ggplot(data = world) +
+  geom_sf() +
+  geom_point(data = subgps, aes(mu.x, mu.y), alpha = 0.5, color = mypalette[1]) +
+  geom_point(data = subgps, aes(mu.x, mu.y, frame = season), alpha = 0.5, color = mypalette[2]) +
+  #annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = F, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
+  theme_bw() +
+  theme(panel.grid = element_line(color = "#C4C4C4")) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       title = "Guard")
+
+fig <- ggplotly(gps_plot_point)
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Season ", font = list(color="black")))
+fig
+
+gps_plot_kernel <- ggplot(data = world) +
+  geom_sf() +
+  geom_density_2d(data = subgps, aes(mu.x, mu.y), color = mypalette[1]) +
+  geom_density_2d(data = subgps, aes(mu.x, mu.y, frame = season), color = mypalette[2]) +
+  #annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), 1180000), ylim = c(-4330000, max(mygps$mu.y))) +
+  theme_bw() +
+  theme(panel.grid = element_line(color = "#C4C4C4")) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       title = "Guard")
+
+fig <- ggplotly(gps_plot_kernel)
+fig <- fig %>%
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>%
+  animation_slider(currentvalue = list(prefix = "Season ", font = list(color="black")))
+fig
+
+#Depth data
+dive_plot <- ggplot(subgps, aes(x = as.factor(season), y = prop_dive)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  geom_hline(yintercept = mean(subgps$prop_dive, na.rm = T), linetype = "dashed") +
+  labs(x = "Season",
+       y = "Proportion of time spent diving / 15 min ",
+       title = "Guard")
+
+plot(dive_plot)
+
+#2. Incubation ####
+subgps <- mygps[which(mygps$breeding_stage == "I"),]
+gps_plot_point <- ggplot(data = world) +
+  geom_sf() +
+  geom_point(data = subgps, aes(mu.x, mu.y), alpha = 0.5, color = mypalette[1]) +
+  geom_point(data = subgps, aes(mu.x, mu.y, frame = season), alpha = 0.5, color = mypalette[2]) +
+  #annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = F, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
+  theme_bw() +
+  theme(panel.grid = element_line(color = "#C4C4C4")) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       title = "Incubation")
+
+fig <- ggplotly(gps_plot_point)
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Season ", font = list(color="black")))
+fig
+
+gps_plot_kernel <- ggplot(data = world) +
+  geom_sf() +
+  geom_density_2d(data = subgps, aes(mu.x, mu.y), color = mypalette[1]) +
+  geom_density_2d(data = subgps, aes(mu.x, mu.y, frame = season), color = mypalette[2]) +
+  #annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), 1180000), ylim = c(-4330000, max(mygps$mu.y))) +
+  theme_bw() +
+  theme(panel.grid = element_line(color = "#C4C4C4")) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       title = "Incubation")
+
+fig <- ggplotly(gps_plot_kernel)
+fig <- fig %>%
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>%
+  animation_slider(currentvalue = list(prefix = "Season ", font = list(color="black")))
+fig
+
+#Depth data
+dive_plot <- ggplot(subgps, aes(x = as.factor(season), y = prop_dive)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  geom_hline(yintercept = mean(subgps$prop_dive, na.rm = T), linetype = "dashed") +
+  labs(x = "Season",
+       y = "Proportion of time spent diving / 15 min ",
+       title = "Incubation")
+
+plot(dive_plot)
+#3. Post-guard ####
+subgps <- mygps[which(mygps$breeding_stage == "P"),]
+gps_plot_point <- ggplot(data = world) +
+  geom_sf() +
+  geom_point(data = subgps, aes(mu.x, mu.y), alpha = 0.5, color = mypalette[1]) +
+  geom_point(data = subgps, aes(mu.x, mu.y, frame = season), alpha = 0.5, color = mypalette[2]) +
+  #annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = F, xlim = c(min(mygps$mu.x), max(mygps$mu.x)), ylim = c(min(mygps$mu.y), max(mygps$mu.y))) +
+  theme_bw() +
+  theme(panel.grid = element_line(color = "#C4C4C4")) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       title = "Post-guard")
+
+fig <- ggplotly(gps_plot_point)
+fig <- fig %>% 
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>% 
+  animation_slider(currentvalue = list(prefix = "Season ", font = list(color="black")))
+fig
+
+gps_plot_kernel <- ggplot(data = world) +
+  geom_sf() +
+  geom_density_2d(data = subgps, aes(mu.x, mu.y), color = mypalette[1]) +
+  geom_density_2d(data = subgps, aes(mu.x, mu.y, frame = season), color = mypalette[2]) +
+  #annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(crs = proj.aeqd, expand = T, xlim = c(min(mygps$mu.x), 1180000), ylim = c(-4330000, max(mygps$mu.y))) +
+  theme_bw() +
+  theme(panel.grid = element_line(color = "#C4C4C4")) +
+  labs(x = "Longitude",
+       y = "Latitude",
+       title = "Post-guard")
+
+fig <- ggplotly(gps_plot_kernel)
+fig <- fig %>%
+  animation_opts(frame = 3000, transition = 500, easing = "circle", redraw = F) %>%
+  animation_slider(currentvalue = list(prefix = "Season ", font = list(color="black")))
+fig
+
+#Depth data
+dive_plot <- ggplot(subgps, aes(x = as.factor(season), y = prop_dive)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  geom_hline(yintercept = mean(subgps$prop_dive, na.rm = T), linetype = "dashed") +
+  labs(x = "Season",
+       y = "Proportion of time spent diving / 15 min ",
+       title = "Post-guard")
+
+plot(dive_plot)
+```
+
+# Marine traffic (2012-2020)
+
+The raster is just a sum of the observed position in the cell from september to december of that year.  
+**Note**: Data from November 2019 do not have timestamp!  
+
+```{r marine traffic}
+marine_df <- readRDS("Data/Marine_traffic/Marine_traffic_2012-2020.rds")
+marine_df$timestamp <- as.character(marine_df$timestamp)
+marine_df$year <- substr(sapply(strsplit(marine_df$timestamp, "/"),"[", 3), 1, 4)
+marine_df$year <- as.numeric(marine_df$year)
+
+marine_df$year[which(is.na(marine_df$year))] <- 2019
+
+marine_df$month <- as.numeric(sapply(strsplit(marine_df$timestamp, "/"),"[", 2))
+marine_df$month[which(is.na(marine_df$month))] <- 11
+
+marine_df$pengu_season <- ifelse(marine_df$month < 6, marine_df$year-1, marine_df$year)
+
+traffic_count <- tibble()
+for (k in 2012:2020) {
+  marine_df_filtered <- marine_df %>% filter(pengu_season == k & month >= 9)
+  
+  coordinates(marine_df_filtered) <- ~ lon + lat
+  
+  #rasterize
+  r <- raster(xmn=145, ymn=-39.5, xmx=146, ymx=-38.5, res=0.025)
+  r.nb <- rasterize(marine_df_filtered, r, field = marine_df_filtered$craft_id , fun='count')  # field can be any column with     fun="count"
+  
+  # plot ggplot, il faut repasser en data.frame
+  df.nb <- as.data.frame(r.nb,xy=T)
+  colnames(df.nb)[which(names(df.nb) == "layer")] <- "myvariable"
+  df.nb$myvariable[which(is.na(df.nb$myvariable))] <- 0
+  
+  df.nb$pengu_season <- k
+  traffic_count <- rbind(traffic_count, df.nb)
+}
+
+traffic_count <- traffic_count %>% filter(myvariable < 500)
+traffic_count$pengu_season <- as.factor(as.character(traffic_count$pengu_season))
+world <- rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
+
+traffic_map <- ggplot(data = world) +
+  geom_raster(data = traffic_count, aes( x = x, y = y, fill = myvariable)) +
+  scale_fill_gradientn(colors = c("#FFFFFF00","#E1E1E1",rev(viridis(30)))) +
+  geom_sf() +
+  annotation_scale(location = "bl", width_hint = 0.25, text_cex = 1.3) +
+  coord_sf(xlim = c(145,146), ylim = c(-39.5,-38.4), expand = F) +
+  facet_wrap(~pengu_season) +
+  theme(legend.direction = "horizontal",
+        legend.position = "bottom") +
+  labs(title = "Marine traffic from September to December")
+
+plot(traffic_map)
+```
+

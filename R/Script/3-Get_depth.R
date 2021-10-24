@@ -7,44 +7,203 @@ library(data.table);library(ggspatial)
 #~~~~~#
 
 # Step 1: Extract the depth from the axy data####
+myseason <- 2014
+
 getmode <- function(v){# Function to get the mode of the pressure
   uniqv <- unique(v)
   uniqv[which.max(tabulate(match(v,uniqv)))]
 }
 
-acc_path <- "Data/LPPI2019/ACCcsv" # Path of acc files
+acc_path <- paste0("Data/LPPI",myseason,"/ACCcsv") # Path of acc files
 my_acc <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".csv")) # Get the acc filenames
+if(myseason < 2015){
+  my_acc <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".txt")) # Get the acc filenames
+}
 
-my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds") # File of interpolated tracks
+if(myseason == 2011 | myseason == 2012){#mix CSV and txt data
+  my_acctxt <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".txt")) # Get the acc filenames
+  my_acccsv <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".CSV")) # Get the acc filenames
+  my_acc <- c(my_acctxt, my_acccsv)
+  if(myseason == 2012){
+    my_old_acc <- my_acc
+    my_acc <- substr(my_acc, 1,8)
+  }
+}
+
+if(myseason == 2020 | myseason == 2018){#remove the "_S1" for 2020 to get the right name
+  old_acc <- my_acc
+  my_acc <- substr(my_acc, 1,nchar(my_acc)-3)
+}
+
+if(myseason == 2015){
+  old_acc <- my_acc
+  my_acc <- paste0(substr(my_acc, nchar(my_acc), nchar(my_acc)), substr(my_acc, 1, 11))
+}
+
+if(myseason == 2014){#add WACU
+  wacu_dep <- readxl::read_xlsx("Data/LPPI2014/WACU_deployment.xlsx")
+  wacu_names <- paste(wacu_dep$bird, wacu_dep$sex, sep = "-")
+  wacu_inc <- paste0("I-", wacu_names)
+  wacu_post <- paste0("P-", wacu_names)
+  wacu_names <- c(wacu_inc, wacu_post)
+  my_old_acc <- my_acc
+  my_acc <- c(my_acc, wacu_names)
+}
+
+my_global <- readRDS(paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds")) # File of interpolated tracks
 my_gps <- names(table(my_global$crwPredict$bird_ID)) # Extract the bird ID 
 
 to_load <- intersect(my_acc, my_gps) # Acc files to load to extract the depth because we have a matching clean GPS track
 
+if(myseason == 2016){
+  x_gps <- substr(my_gps, 1,13)
+  x_acc <- substr(my_gps, 1,13)
+  to_load <- intersect(x_gps, x_acc)
+  
+  matches <- unique (grep(paste(to_load,collapse="|"), 
+                          my_gps, value=TRUE))
+  my_match <- to_load
+  to_load <- matches
+}
 # Update the gps list
 my_global$crwPredict <- my_global$crwPredict[which(my_global$crwPredict$bird_ID %in% to_load),]
 my_global$crwFits <- my_global$crwFits[which(names(my_global$crwFits) %in% names(table(my_global$crwPredict$ID)))]
-saveRDS(my_global, paste0("Data/LPPI2019/Interpolated_GPS_2019.rds"))
+saveRDS(my_global, paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds"))
+
+
+# For 2015-2020 ####
+if(myseason == 2020 | myseason == 2015 | myseason == 2018){
+  my_acc <- old_acc
+}
 
 for (i in 1:length(to_load)) {# Extract and save the depth
-  axydata <- read.csv(paste0(acc_path,"/",to_load[i],".csv"))
+  multfiles <- which(grepl(to_load[i], my_acc))
+  if(myseason == 2015){
+    x <- substr(to_load[i], 2, nchar(to_load))
+    multfiles <- which(grepl(x, my_acc))
+  }
+  if(myseason == 2018){
+    multfiles <- which(substr(my_acc, 1, nchar(my_acc)-3) == to_load[i])
+  }
+  if(myseason == 2016){
+    multfiles <- which(grepl(my_match[i], x_acc))
+  }
+  axydata <- data.frame()
+    for (l in multfiles) {# If acceleration files are split
+      if(myseason == 2015 | myseason == 2016){
+        partialaxy <- read.csv(paste0(acc_path,"/",my_acc[l],".csv"), sep = "\t")
+      }else if(myseason == 2018){
+        partialaxy <- read.csv(paste0(acc_path,"/",my_acc[l],".csv"), sep = "\t")
+      }else{partialaxy <- read.csv(paste0(acc_path,"/",my_acc[l],".csv"))}
+      axydata <- rbind(axydata, partialaxy)
+    }
+  partialaxy <- data.frame()
+  if(myseason == 2015){
+    names(axydata) <- c("Timestamp","x","y","z","Temp", "Pressure", "Other")
+    axydata$TagID <- substr(to_load[i], 7, nchar(to_load[i]))
+    axydata$mydt <- substr(axydata$Timestamp,1, nchar(axydata$Timestamp)-6)# from 25 to 1 Hz
+    axydata <- axydata[match(unique(axydata$mydt ), axydata$mydt ),]
+  }
+  
+  if(myseason == 2016){# from 25 to 1 Hz
+    axydata$mydt <- substr(axydata$Timestamp,1, nchar(axydata$Timestamp)-4)
+    axydata <- axydata[match(unique(axydata$mydt ), axydata$mydt ),]
+  }
+  
   axydata <- axydata %>% dplyr::select(TagID, Timestamp, Pressure) %>% filter(!is.na(Pressure))
   mymode <- getmode(axydata$Pressure)
   axydata$Depth <- (axydata$Pressure-mymode)/100
+  axydata$TagID <- axydata$TagID[1]
   axydata <- axydata %>% dplyr::select(TagID, Timestamp, Depth)
-  saveRDS(axydata, paste0("Data/LPPI2019/Depth/", to_load[i], ".rds"))
+  saveRDS(axydata, paste0("Data/LPPI",myseason,"/Depth/", to_load[i], ".rds"))
+  print(paste0(i, "/", length(to_load)))
+}
+
+# For 2010-2014: add the timestamp to depth needed ####
+deppath <- paste0("Data/LPPI",myseason,"/Deployment_LP_",myseason,".csv") # Path to the deployment .csv file
+deployment <- read.csv(deppath, sep = ";")
+
+if(myseason == 2012){
+  my_acc <- my_old_acc
+
+}
+
+for(i in 1:length(to_load)){
+  mydeploy <- deployment %>% filter(data_folder_name == to_load[i])
+  multfiles <- which(grepl(to_load[i], my_acc))
+  axydata <- data.frame()
+  for (l in multfiles) {# If acceleration files are split
+    partialaxy <- read.table(paste0(acc_path,"/",my_acc[l],".txt"), skip = 7, sep = ",")
+    # if(myseason == 2011 | myseason == 2012){#mixed data type
+    #   partialaxy <- read.csv(paste0(acc_path,"/",my_acc[l],".CSV"), sep = ",")
+    #   partialaxy <- partialaxy[-nrow(partialaxy),]
+    # }
+    axydata <- rbind(axydata, partialaxy)
+  }
+  partialaxy <- data.frame()
+  names(axydata) <- c("Depth", "Temp", "Timestamp")
+  # if(myseason == 2011 | myseason == 2012){#mixed data type
+  #   names(axydata) <- c("Timestamp", "Depth", "Temp")
+  # }
+  axydata$Timestamp <- force_tz(as.POSIXct(axydata$Timestamp), tzone = "Australia/Melbourne")
+  axydata$Timestamp[1] <- dmy_hms(mydeploy$logger.start[1], tz = "Australia/Melbourne") #Set first time
+  if(myseason == 2013){
+    axydata$Timestamp[1] <- ymd_hms(mydeploy$Recording.start[1], tz = "Australia/Melbourne") #Set first time
+  }
+  if(myseason == 2014){
+    axydata$Timestamp[1] <- ymd_hms(mydeploy$logger.start[1], tz = "Australia/Melbourne") #Set first time
+  }
+  mytimestamp <- seq(from = axydata$Timestamp[1], to = axydata$Timestamp[1]+(nrow(axydata)-1), by = 1)
+  axydata$Timestamp <- mytimestamp
+  # if(myseason == 2011 | myseason == 2012){#mixed data type
+  #   axydata$Timestamp <- dmy_hms(axydata$Timestamp, tz = "Australia/Melbourne")
+  # }
+
+  # then reshape for year to year consistency
+  axydata$TagID <- to_load[i]
+  axydata <- axydata %>% dplyr::select(TagID, Timestamp, Depth)
+  saveRDS(axydata, paste0("Data/LPPI",myseason,"/Depth/", to_load[i], ".rds"))
+  print(paste0(i, "/", length(to_load)))
+}
+
+
+# For 2014 Wacu files ####
+wacu_dep$id <- paste(wacu_dep$bird, wacu_dep$sex, sep = "-")
+id_to_load <- substr(to_load, 3, nchar(to_load))
+wacu_dep <- wacu_dep %>% filter(id %in% id_to_load)
+wacu_to_load <- unique(wacu_dep$Wacu)
+
+for(i in 1:length(id_to_load)){
+  mydeploy <- wacu_dep %>% filter(id == id_to_load[i])
+  axydata <- read.table(paste0(acc_path,"/wacu/wacu",mydeploy$Wacu,".txt"), skip = 22, sep = "\t")
+  names(axydata) <- c("Date", "Time", "Temperature","Pressure", "Luminosity", "TagID")
+  
+  axydata$Timestamp <- dmy_hms(paste(axydata$Date, axydata$Time))
+  axydata$Timestamp <- with_tz(axydata$Timestamp, tzone = "Australia/Melbourne")
+  axydata <- axydata %>% dplyr::select(TagID, Timestamp, Pressure) %>% filter(!is.na(Pressure))
+  
+  mymode <- getmode(axydata$Pressure)
+  axydata$Depth <- (axydata$Pressure-mymode)/100
+  axydata$TagID <- id_to_load [1]
+
+  axydata <- axydata %>% dplyr::select(TagID, Timestamp, Depth)
+  saveRDS(axydata, paste0("Data/LPPI",myseason,"/Depth/", to_load[i], ".rds"))
   print(paste0(i, "/", length(to_load)))
 }
 
 # Step 2: Correct the 0m value of the depth####
-depth_path <- "Data/LPPI2019/Depth"
+depth_path <- paste0("Data/LPPI",myseason,"/Depth")
 depth_files <- list.files(depth_path, pattern = ".rds")
 
-for (j in 14:length(depth_files)) {
+for (j in 23:length(depth_files)) {
   print(depth_files[j])
+  print(paste0(j,"/", length(depth_files)))
   
   depth_data <- readRDS(paste0(depth_path,"/",depth_files[j]))
   
-  depth_data$Timestamp <- with_tz(dmy_hms(depth_data$Timestamp, tz = "UTC"), tz="Australia/Melbourne")
+  if(myseason >= 2015){
+    depth_data$Timestamp <- with_tz(dmy_hms(depth_data$Timestamp, tz = "UTC"), tz="Australia/Melbourne")
+  }
   
   # Remove first and last value because of errors
   depth_data <- depth_data[c(-1, -length(depth_data)),]
@@ -52,7 +211,7 @@ for (j in 14:length(depth_files)) {
   satisfaction <- "n"
   mintime <- NA
   maxtime <- NA
-  maxdepth <- 0.1
+  maxdepth <- 0.5
   polydeg <- 20
   while (satisfaction != "y") {
     sub_depth_data <- depth_data %>% filter(Depth <= maxdepth)
@@ -64,13 +223,13 @@ for (j in 14:length(depth_files)) {
     if(is.na(maxtime) & is.na(mintime)){
       process_plot <- ggplot(depth_data) +
         geom_point(aes(Timestamp, Depth)) +
-        ylim(NA, maxdepth) +
+        ylim(-2, maxdepth) +
         geom_smooth(aes(Timestamp, newzero), stat = "identity")
     }else{
       process_plot <- ggplot(depth_data) +
         geom_point(aes(Timestamp, Depth)) +
         xlim(mintime, maxtime) +
-        ylim(NA, maxdepth) +
+        ylim(-2, maxdepth) +
         geom_smooth(aes(Timestamp, newzero), stat = "identity")
     }
     
@@ -92,28 +251,24 @@ for (j in 14:length(depth_files)) {
   
   depth_data$correc_depth <- depth_data$Depth - depth_data$newzero
   
-  correct_plot <- ggplot(depth_data) +
-                    geom_point(aes(Timestamp, Depth)) +
-                    geom_point(aes(Timestamp, correc_depth), color = viridis(1), alpha = 0.5) +
-                    ylim(NA, maxdepth)
-  
-  print(correct_plot)
+  # correct_plot <- ggplot(depth_data) +
+  #                   geom_point(aes(Timestamp, Depth)) +
+  #                   geom_point(aes(Timestamp, correc_depth), color = viridis(1), alpha = 0.5)
+  #                   #ylim(NA, maxdepth)
+  # 
+  # print(correct_plot)
   
   depth_data$dive <- ifelse(depth_data$correc_depth >= 2, 1, 0) # Dive is 2M
   
   saveRDS(depth_data, paste0(depth_path, "/corrected/", depth_files[j]))
-  
-  keep <- readline(prompt = "Continue? (y/n) ")
-  if(keep == "n"){stop("Process stopped")}
-
 }
 
 # Step 3: Synch with the GPS####
 
-depth_path <- "Data/LPPI2019/Depth/corrected"
+depth_path <- paste0("Data/LPPI",myseason,"/Depth/corrected")
 
 my_depth <- tools::file_path_sans_ext(list.files(depth_path, pattern = ".rds")) # Get the depth filenames
-my_global <- readRDS("Data/LPPI2019/Interpolated_GPS_2019.rds")
+my_global <- readRDS(paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds"))
 rownames(my_global$crwPredict) <- 1:nrow(my_global$crwPredict)
 
 my_gps <- names(table(my_global$crwPredict$bird_ID)) # Extract the bird ID 
@@ -135,33 +290,69 @@ for (i in loop_index) {
 
   trackID <- my_global$crwPredict$bird_ID[i]
   mydive <- readRDS(paste0(depth_path,"/",trackID,".rds"))
-
-  mymin <- i
-  mingps <- which(mydive$Timestamp == my_global$crwPredict$dt[mymin])
-  while (length(mingps) == 0) {
-    mymin <- mymin + 1
+  
+  if(max(my_global$crwPredict$dt[i:as.numeric(rownames(last_ping))]) >= min(mydive$Timestamp) &
+     max(mydive$Timestamp) >= min(my_global$crwPredict$dt[i:as.numeric(rownames(last_ping))])){#Else it means no depth data for the track
+    mymin <- i
     mingps <- which(mydive$Timestamp == my_global$crwPredict$dt[mymin])
-  }
-  
-  maxgps <- which(mydive$Timestamp == last_ping$dt)
-  filtered_dive <- mydive[mingps:maxgps,]
-  
-  for (k in (mymin+1):as.numeric(row.names(last_ping))) {
-    start_dive <- my_global$crwPredict$dt[k-1]
-    end_dive <- my_global$crwPredict$dt[k]
+    while (length(mingps) == 0 & mymin <= as.numeric(rownames(last_ping)) - i) {
+      mymin <- mymin + 1
+      mingps <- which(mydive$Timestamp == my_global$crwPredict$dt[mymin])
+    }
     
-    the_dive <- filtered_dive %>% filter(Timestamp > start_dive & Timestamp <= end_dive)
-    my_global$crwPredict$prop_dive[k] <- sum(the_dive$dive)/nrow(the_dive)
-    my_global$crwPredict$max_depth[k] <- max(the_dive$correc_depth)
+    if(length(mingps) > 0){#To deal with too short depth data 
+      maxgps <- which(mydive$Timestamp == last_ping$dt)
+      if(length(maxgps) == 0){
+        newmax <- max(mydive$Timestamp)-my_global$crwPredict$dt[i:as.numeric(rownames(last_ping))]
+        newmax <- newmax[which(newmax >= 0)]
+        newmax <- which(max(mydive$Timestamp)-my_global$crwPredict$dt[i:as.numeric(rownames(last_ping))] == min(newmax[which(newmax >= 0)]))
+        
+        newmax <- i+newmax-1
+        maxgps <- which(mydive$Timestamp == my_global$crwPredict$dt[newmax])
+        
+      }
+      filtered_dive <- mydive[mingps:maxgps,]
+      
+      for (k in (mymin+1):as.numeric(row.names(last_ping))) {
+        start_dive <- my_global$crwPredict$dt[k-1]
+        end_dive <- my_global$crwPredict$dt[k]
+        
+        the_dive <- filtered_dive %>% filter(Timestamp > start_dive & Timestamp <= end_dive)
+        my_global$crwPredict$prop_dive[k] <- sum(the_dive$dive)/nrow(the_dive)
+        my_global$crwPredict$max_depth[k] <- max(the_dive$correc_depth)
+      }
+    }
   }
   print(paste0(j,"/",length(loop_index)))
   j <- j+1
 }
+ 
+#Remove tracks with no depth data
+loop_index <- as.numeric(rownames(my_global$crwPredict[!duplicated(my_global$crwPredict$ID),]))
+j <- 1 # Loop index count
+toremove <- character()
+for (i in loop_index) {
+  if(i != loop_index[length(loop_index)]){
+    last_ping <- my_global$crwPredict[loop_index[j+1]-1,]
+  }else{
+    last_ping <- my_global$crwPredict[nrow(my_global$crwPredict),]
+  }
+  na_depth <- any(is.na(my_global$crwPredict$prop_dive[i:as.numeric(rownames(last_ping))]) == FALSE) #state if we have depth values
+  if(na_depth == FALSE){
+    toremove <- c(toremove, my_global$crwPredict$ID[i])
+  }
+  j <- j+1
+}
 
-saveRDS(my_global, "Data/LPPI2019/Interpolated_GPS_Depth_2019.rds")
+my_global$crwPredict <- my_global$crwPredict[-which(my_global$crwPredict$ID %in% toremove),] #update the pred data
+my_global$crwFits <- my_global$crwFits[-which(names(my_global$crwFits) %in% toremove)] #update the fit data
+rownames(my_global$crwPredict) <- 1:nrow(my_global$crwPredict)
+
+saveRDS(my_global, paste0("Data/LPPI",myseason,"/Interpolated_GPS_Depth_",myseason,".rds"))
 
 # (Optional: Plot)####
 world <- rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
+mygps <- my_global$crwPredict
 
 # CRS string for Australia
 ESPG <- x<-rgdal::make_EPSG()
@@ -187,4 +378,4 @@ speed_plot <- ggplot(data = world) +
   scale_color_continuous(type = "viridis") +
   theme(panel.grid = element_line(color = "#C4C4C4"))
 
-cowplot::plot_grid(track_plot, speed_plot)
+cowplot::plot_grid(track_plot, speed_plot, labels = myseason)
