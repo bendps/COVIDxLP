@@ -26,7 +26,8 @@ library(tidyverse);library(momentuHMM)
 # Data Exploration
 First we just load the output data frow the `crawlWrap` function. We can reshape it using `prepdata` to have something readable for the HMM.
 ```{r load}
-crwOut <- readRDS("Data/LPPI2019/Interpolated_GPS_Depth_2019.rds")
+myseason <- 2017
+crwOut <- readRDS(paste0("Data/LPPI",myseason,"/Interpolated_GPS_Depth_",myseason,".rds"))
 lpdata <- prepData(crwOut)
 
 head(lpdata)

@@ -7,9 +7,9 @@ library(lubridate);library(suncalc)
 #~~~~~#
 
 #Input parameters
-myseason <- 2019 #What year do you want to clean?
-datapath <- "Data/LPPI2019/GPStxt" #Path to the GPS files
-deppath <- "Data/LPPI2019/Deployment_LP_2019.csv" # Path to the deployment .csv file
+myseason <- 2017 #What year do you want to clean?
+datapath <- "Data/LPPI2017/GPS" #Path to the GPS files
+deppath <- "Data/LPPI2017/Deployment_LP_2017.csv" # Path to the deployment .csv file
 toremove <- 4 # Characters to remove from file names to get the full ID
 
 flist <- list.files(datapath, pattern = "*.txt")
@@ -20,10 +20,11 @@ if(myseason <= 2017){
 deployment <- read.csv(deppath, sep = ";")
 weighbridge <- readRDS("Data/weighbridge.rds")
 
-for(n in 26:length(flist)){
+for(n in 41:length(flist)){
+  print(paste0(n,"/", length(flist)))
   #Get deployment and weighbridge data
   if(myseason <= 2017){
-    depID <- substr(flist[n],10,15)
+    depID <- str_replace_all(str_extract_all(flist, "_\\s*(.*?)\\s*_")[[n]][2], "_", "")
     print(depID)
     mydeploy <- deployment %>% filter(data_folder_name == depID)
     mybridge <- weighbridge %>% filter(pit_tag == depID & season == myseason)
@@ -44,27 +45,44 @@ for(n in 26:length(flist)){
   if(mydeploy$clutch_number != 2){
     #Name the columns
     if(myseason <= 2017){
-      names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude","Sat","Hdop","Sig", "TFFs", "Info")
+      names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude","Sat","Hdop","Sig", "TFFs", "Speed")
       GPS$Dt <- paste(GPS$Date, GPS$Time)
-      GPS <- GPS[,c(3:10)]
+      GPS <- GPS[,c(3:11)]
       GPS <- GPS %>% relocate(Dt, .before = Latitude)
+      GPS <- GPS %>% relocate(Speed, .before = Sat)
+      GPS <- GPS %>% dplyr::select(-TFFs)
+      GPS$Dt <- with_tz(mdy_hms(GPS$Dt, tz="UTC"), tz="Australia/Melbourne")
+      GPS$Datef <- date(GPS$Dt) #or as.Date for UTC date
+      GPS$Stage <- str_replace_all(str_extract(flist[n], "(.s*?)\\s*_"),"_", "")
+      GPS$Nest <- str_replace_all(str_extract_all(flist, "_\\s*(.*?)\\s*_")[[n]][1], "_", "")
+      if(str_detect(flist[n], "F") == TRUE){
+        GPS$Sex <- "F"
+      }else{GPS$Sex <- "M"}
+      
+      #Re-order the data to look like later years
+      
+      
     }
+    #Add new infos
     if(myseason == 2018){
       names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude","Speed","Sat","Hdop","Sig")
       GPS$Dt <- paste(GPS$Date, GPS$Time)
       GPS <- GPS[,c(3:10)]
       GPS <- GPS %>% relocate(Dt, .before = Latitude)
+      GPS$Dt <- with_tz(dmy_hms(GPS$Dt, tz="UTC"), tz="Australia/Melbourne")
+      GPS$Datef <- date(GPS$Dt) #or as.Date for UTC date
+      GPS$Stage <- substr(factor(flist[n]),1,1)
+      GPS$Nest <- substr(factor(flist[n]),2,5)
+      GPS$Sex <- substr(factor(flist[n]),6,6)
     }
     if(myseason >= 2019){
       names(GPS) <- c("Dt","Latitude","Longitude","Altitude","Speed","Sat","Hdop","Sig")
+      GPS$Dt <- with_tz(dmy_hms(GPS$Dt, tz="UTC"), tz="Australia/Melbourne")
+      GPS$Datef <- date(GPS$Dt) #or as.Date for UTC date
+      GPS$Stage <- substr(factor(flist[n]),1,1)
+      GPS$Nest <- substr(factor(flist[n]),2,5)
+      GPS$Sex <- substr(factor(flist[n]),6,6)
     }
-    
-    #Add new infos
-    GPS$Dt <- with_tz(dmy_hms(GPS$Dt, tz="UTC"), tz="Australia/Melbourne")
-    GPS$Datef <- date(GPS$Dt) #or as.Date for UTC date
-    GPS$Stage <- substr(factor(flist[n]),1,1)
-    GPS$Nest <- substr(factor(flist[n]),2,5)
-    GPS$Sex <- substr(factor(flist[n]),6,6)
     GPS <- GPS[with(GPS,order(Dt)),]
     rownames(GPS) <- 1:nrow(GPS)
     
@@ -108,8 +126,8 @@ for(n in 26:length(flist)){
         print(mybridge)
         request <- readline(prompt = "What is the issue? (beg/end/remove/keep/abort) ")
         if(request == "beg"){
-          startime <- readline(prompt = "What should be the new starting date time? (dd/mm/yyyy hh:mm:ss) ")
-          newstart <- data.frame(dmy_hms(startime, tz="Australia/Melbourne"),
+          startime <- readline(prompt = "What should be the new starting date time? (yyyy-mm-dd hh:mm:ss) ")
+          newstart <- data.frame(ymd_hms(startime, tz="Australia/Melbourne"),
                                  colat,
                                  colon,
                                  0,
@@ -128,8 +146,8 @@ for(n in 26:length(flist)){
           rownames(GPS) <- 1:nrow(GPS)
         }
         if(request == "end"){
-          endtime <- readline(prompt = "What should be the new ending date time? (dd/mm/yyyy hh:mm:ss) ")
-          newend <- data.frame(dmy_hms(endtime, tz="Australia/Melbourne"),
+          endtime <- readline(prompt = "What should be the new ending date time? (yyyy-mm-dd hh:mm:ss) ")
+          newend <- data.frame(ymd_hms(endtime, tz="Australia/Melbourne"),
                                colat,
                                colon,
                                0,
@@ -296,7 +314,7 @@ for(n in 26:length(flist)){
         
         #CLEANING: find and remove some points >7 000 m/h & Int <0.002 h (7.2s)
         GPS$Cdist[(GPS$Int<0.002)&(GPS$Mspeed>7000)] <- NA
-        GPS <- na.omit(GPS)
+        GPS <- GPS %>% drop_na(Int, Mspeed)
         
         #Re-cal Mspeed
         rownames(GPS)<-1:nrow(GPS)
@@ -315,8 +333,8 @@ for(n in 26:length(flist)){
             GPS$Cdist[i] <- NA
             GPS$Mspeed[i] <- 0}
         }
-        while(any(is.na(GPS))){ # if TRUE=0 then go to #NEXT#
-          GPS<-na.omit(GPS)
+        while(any(is.na(GPS$Cdist))){ # if TRUE=0 then go to #NEXT#
+          GPS <- GPS %>% drop_na(Cdist)
           #re-cal Mspeed
           rownames(GPS)<-1:nrow(GPS)
           for (i in 1:(nrow(GPS)-1)) {
@@ -332,7 +350,7 @@ for(n in 26:length(flist)){
           }
         }
         
-        print(table(is.na(GPS)))
+        print(table(is.na(GPS$Mspeed)))
         plot(GPS$Dt,GPS$Mspeed)
         
         #NEXT# find and remove single points >8 000 m/h
@@ -344,8 +362,8 @@ for(n in 26:length(flist)){
               GPS$Cdist[i+1] <- NA}
           }
         }
-        while(any(is.na(GPS))){#Repeat until all deleted
-          GPS<-na.omit(GPS)
+        while(any(is.na(GPS$Cdist))){#Repeat until all deleted
+          GPS <- GPS %>% drop_na(Cdist)
           #Re-cal Mspeed
           rownames(GPS)<-1:nrow(GPS)
           for (i in 1:(nrow(GPS)-1)) {
@@ -366,15 +384,25 @@ for(n in 26:length(flist)){
         }
         
         plot(GPS$Dt,GPS$Mspeed)
-        print(table(is.na(GPS)))
+        print(table(is.na(GPS$Mspeed)))
         
         #SAVE GPS data as RData
-        if(ntrips == 1){
-          saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,".rds"))
+        if(myseason <= 2017){
+          if(ntrips == 1){
+            saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_", GPS$Stage[1], GPS$Nest[1], GPS$Sex[1], depID,".rds"))
+          }
+          else{
+            saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_", GPS$Stage[1], GPS$Nest[1], GPS$Sex[1], depID, "_", q, ".rds"))
+          }
+        }else{
+          if(ntrips == 1){
+            saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,".rds"))
+          }
+          else{
+            saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,"_",q,".rds"))
+          }
         }
-        else{
-          saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,"_",q,".rds"))
-        }
+
       }
     }
   }
