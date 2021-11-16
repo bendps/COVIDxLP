@@ -10,7 +10,11 @@ myseason <- 2014
 
 # 1. Load####
 # Merge all tracks
+<<<<<<< HEAD
 track_path <- paste0("Data/LPPI",myseason,"/GPS/Cleaned")
+=======
+track_path <- "Data/LPPI2017/GPS/Cleaned/Renamed"
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
 track_list <- list.files(track_path, ".rds")
 myglobal <- data.frame()
 
@@ -24,6 +28,7 @@ for (i in 1:length(track_list)) {
 myglobal$bird_ID <- str_extract(myglobal$track_ID, "^.*(?=(_))")
 myglobal$bird_ID[which(is.na(myglobal$bird_ID))] <- myglobal$track_ID[which(is.na(myglobal$bird_ID))]
 
+<<<<<<< HEAD
 # For 2017/2016
 if(myseason == 2017 | myseason == 2016){
   for (k in 1:nrow(myglobal)) {
@@ -34,6 +39,15 @@ if(myseason == 2017 | myseason == 2016){
   myglobal$bird_ID[!which(!grepl("_",substr(myglobal$track_ID, nchar(myglobal$track_ID)-1, nchar(myglobal$track_ID))))] <- myglobal$track_ID
   
 }
+=======
+# For 2017
+for (k in 1:nrow(myglobal)) {
+  if(grepl("_",substr(myglobal$track_ID[k], nchar(myglobal$track_ID[k])-1, nchar(myglobal$track_ID[k]))) == FALSE){
+    myglobal$bird_ID[k] <- myglobal$track_ID[k]
+  }
+}
+myglobal$bird_ID[!which(!grepl("_",substr(myglobal$track_ID, nchar(myglobal$track_ID)-1, nchar(myglobal$track_ID))))] <- myglobal$track_ID
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
 
 # Interpolate
 lpproj <- myglobal
@@ -86,6 +100,7 @@ for(k in 1:nrow(crwOut$crwPredict)){
   }
 }
 
+<<<<<<< HEAD
 
 
 saveRDS(crwOut, paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds"))
@@ -93,3 +108,6 @@ saveRDS(crwOut, paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds"
 plot(crwOut, compact = T)
 
 
+=======
+saveRDS(crwOut, paste0("Data/LPPI2017/Interpolated_GPS_2017.rds"))
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961

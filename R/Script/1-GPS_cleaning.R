@@ -7,11 +7,18 @@ library(lubridate);library(suncalc)
 #~~~~~#
 
 #Input parameters
+<<<<<<< HEAD
 myseason <- 2014 #What year do you want to clean?
 toremove <- 14 # Characters to remove from file names to get the full ID
 
 datapath <- paste0("Data/LPPI",myseason,"/GPS") #Path to the GPS files
 deppath <- paste0("Data/LPPI",myseason,"/Deployment_LP_",myseason,".csv") # Path to the deployment .csv file
+=======
+myseason <- 2017 #What year do you want to clean?
+datapath <- "Data/LPPI2017/GPS" #Path to the GPS files
+deppath <- "Data/LPPI2017/Deployment_LP_2017.csv" # Path to the deployment .csv file
+toremove <- 4 # Characters to remove from file names to get the full ID
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
 
 flist <- list.files(datapath, pattern = "*.txt")
 if(myseason <= 2017 | myseason == 2012 | myseason == 2013){
@@ -27,6 +34,7 @@ if(myseason >= 2017 | myseason == 2010 | myseason == 2011 | myseason == 2012 | m
 
 weighbridge <- readRDS("Data/weighbridge.rds")
 
+<<<<<<< HEAD
 for(n in 31:length(flist)){
   print(paste0(n,"/", length(flist)))
   #Get deployment and weighbridge data
@@ -36,6 +44,12 @@ for(n in 31:length(flist)){
     mydeploy <- tibble(clutch_number = 1)
     mybridge <- weighbridge %>% filter(pit_tag == depID & season == myseason)
   }else if(myseason == 2017){
+=======
+for(n in 41:length(flist)){
+  print(paste0(n,"/", length(flist)))
+  #Get deployment and weighbridge data
+  if(myseason <= 2017){
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
     depID <- str_replace_all(str_extract_all(flist, "_\\s*(.*?)\\s*_")[[n]][2], "_", "")
     print(depID)
     mydeploy <- deployment %>% filter(data_folder_name == depID)
@@ -60,6 +74,7 @@ for(n in 31:length(flist)){
   }
   
   if(mydeploy$clutch_number != 2){
+<<<<<<< HEAD
     #Name the columns & add infos
     if(myseason == 2010 | myseason == 2011 | myseason == 2012 | myseason == 2013 | myseason == 2014){
       names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude", "Speed","Sat","Hdop","Sig", "TFFs")
@@ -92,6 +107,14 @@ for(n in 31:length(flist)){
       GPS$Dt <- paste(GPS$Date, GPS$Time)
       GPS <- GPS[,c(3:11)]
       GPS <- GPS %>% relocate(Dt, .before = Latitude)
+=======
+    #Name the columns
+    if(myseason <= 2017){
+      names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude","Sat","Hdop","Sig", "TFFs", "Speed")
+      GPS$Dt <- paste(GPS$Date, GPS$Time)
+      GPS <- GPS[,c(3:11)]
+      GPS <- GPS %>% relocate(Dt, .before = Latitude)
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
       GPS <- GPS %>% relocate(Speed, .before = Sat)
       GPS <- GPS %>% dplyr::select(-TFFs)
       GPS$Dt <- with_tz(mdy_hms(GPS$Dt, tz="UTC"), tz="Australia/Melbourne")
@@ -101,7 +124,15 @@ for(n in 31:length(flist)){
       if(str_detect(flist[n], "F") == TRUE){
         GPS$Sex <- "F"
       }else{GPS$Sex <- "M"}
+<<<<<<< HEAD
+=======
+      
+      #Re-order the data to look like later years
+      
+      
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
     }
+    #Add new infos
     if(myseason == 2018){
       names(GPS) <- c("Date", "Time", "Latitude","Longitude","Altitude","Speed","Sat","Hdop","Sig")
       GPS$Dt <- paste(GPS$Date, GPS$Time)
@@ -425,7 +456,11 @@ for(n in 31:length(flist)){
         print(table(is.na(GPS$Mspeed)))
         
         #SAVE GPS data as RData
+<<<<<<< HEAD
         if(myseason <= 2017 & myseason > 2014){
+=======
+        if(myseason <= 2017){
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
           if(ntrips == 1){
             saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_", GPS$Stage[1], GPS$Nest[1], GPS$Sex[1], depID,".rds"))
           }
@@ -439,6 +474,7 @@ for(n in 31:length(flist)){
           else{
             saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,"_",q,".rds"))
           }
+<<<<<<< HEAD
         }
 
       }
@@ -791,7 +827,10 @@ for (i in loop_index) {
         }
         else{
           saveRDS(GPS, file=paste0(datapath,"/Cleaned/GPS_",depID,"_",q,".rds"))
+=======
+>>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
         }
+
       }
       
     }
