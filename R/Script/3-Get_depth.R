@@ -14,11 +14,7 @@ getmode <- function(v){# Function to get the mode of the pressure
   uniqv[which.max(tabulate(match(v,uniqv)))]
 }
 
-<<<<<<< HEAD
-=======
 myseason <- "2017"
-
->>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
 acc_path <- paste0("Data/LPPI",myseason,"/ACCcsv") # Path of acc files
 my_acc <- tools::file_path_sans_ext(list.files(acc_path, pattern = ".csv")) # Get the acc filenames
 if(myseason < 2015){
@@ -35,7 +31,6 @@ if(myseason == 2011 | myseason == 2012){#mix CSV and txt data
   }
 }
 
-<<<<<<< HEAD
 if(myseason == 2020 | myseason == 2018){#remove the "_S1" for 2020 to get the right name
   old_acc <- my_acc
   my_acc <- substr(my_acc, 1,nchar(my_acc)-3)
@@ -55,9 +50,6 @@ if(myseason == 2014){#add WACU
   my_old_acc <- my_acc
   my_acc <- c(my_acc, wacu_names)
 }
-
-=======
->>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
 my_global <- readRDS(paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds")) # File of interpolated tracks
 my_gps <- names(table(my_global$crwPredict$bird_ID)) # Extract the bird ID 
 
@@ -77,8 +69,6 @@ if(myseason == 2016){
 my_global$crwPredict <- my_global$crwPredict[which(my_global$crwPredict$bird_ID %in% to_load),]
 my_global$crwFits <- my_global$crwFits[which(names(my_global$crwFits) %in% names(table(my_global$crwPredict$ID)))]
 saveRDS(my_global, paste0("Data/LPPI",myseason,"/Interpolated_GPS_",myseason,".rds"))
-<<<<<<< HEAD
-
 
 # For 2015-2020 ####
 if(myseason == 2020 | myseason == 2015 | myseason == 2018){
@@ -189,27 +179,11 @@ for(i in 1:length(id_to_load)){
   
   axydata$Timestamp <- dmy_hms(paste(axydata$Date, axydata$Time))
   axydata$Timestamp <- with_tz(axydata$Timestamp, tzone = "Australia/Melbourne")
-=======
-
-for (i in 1:length(to_load)) {# Extract and save the depth
-  multfiles <- which(grepl(to_load[i], my_acc))
-  axydata <- data.frame()
-  for (l in multfiles) {# If acceleration files are split
-    partialaxy <- read.csv(paste0(acc_path,"/",my_acc[l],".csv"))
-    axydata <- rbind(axydata, partialaxy)
-  }
-  #axydata <- read.csv(paste0(acc_path,"/",to_load[i],".csv"))
->>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
   axydata <- axydata %>% dplyr::select(TagID, Timestamp, Pressure) %>% filter(!is.na(Pressure))
   
   mymode <- getmode(axydata$Pressure)
   axydata$Depth <- (axydata$Pressure-mymode)/100
-<<<<<<< HEAD
   axydata$TagID <- id_to_load [1]
-
-=======
-  axydata$TagID <- axydata$TagID[1]
->>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
   axydata <- axydata %>% dplyr::select(TagID, Timestamp, Depth)
   saveRDS(axydata, paste0("Data/LPPI",myseason,"/Depth/", to_load[i], ".rds"))
   print(paste0(i, "/", length(to_load)))
@@ -219,11 +193,7 @@ for (i in 1:length(to_load)) {# Extract and save the depth
 depth_path <- paste0("Data/LPPI",myseason,"/Depth")
 depth_files <- list.files(depth_path, pattern = ".rds")
 
-<<<<<<< HEAD
 for (j in 23:length(depth_files)) {
-=======
-for (j in 8:length(depth_files)) {
->>>>>>> 955f76970b1a130701cddc5e6b685d6e59902961
   print(depth_files[j])
   print(paste0(j,"/", length(depth_files)))
   
