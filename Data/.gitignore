@@ -27,3 +27,15 @@ Marine_traffic_
 global_count.rds
 lp_isotope.csv
 parade_counts.csv
+SI_overlap_index.rds
+allm_parallel_2s.rds
+allm_parallel_3s.rds
+boat_loc_lppi.rds
+full_data_loc_depth_lppi.rds
+full_data_loc_depth_lppi_states.rds
+KBA_lp.rds
+LP_lilia.zip
+feed_overnight.rds
+kba_shapefiles
+lp_loc_corrected_kud.rds
+lp_visit_count.csv

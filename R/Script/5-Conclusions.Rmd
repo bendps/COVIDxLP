@@ -1,0 +1,700 @@
+---
+title: "10-Conclusions"
+author: "Benjamin Dupuis"
+date: "25/01/2022"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: yeti
+    highlight: kate
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = F, warning = F)
+```
+
+# Study of the effect of anthropogenic activities on little penguins foraging during the breeding season at Phillip island
+
+```{r preambule}
+rm(list = ls())
+library(tidyverse) ; library(lubridate)
+library(lme4) ; library(lmerTest) ; library(dplyr)
+library(multcomp) ; library(dplyr) ; library(ggplot2)
+library(lattice) ; library(car) ; library(performance)
+library(cowplot) ; library(sp) ; library(sf) ; library(ggspatial)
+library(gridExtra) ; library(plotly) ; library(viridis)
+library(raster) ; library(suncalc) ; library(simmr)
+library(SIBER) ; library(ellipse) ; library(sjPlot)
+library(nicheROVER);library(SIBER);library(ellipse); library(coda)
+library(sp);library(sf);library(ggspatial);library(track2KBA); library(ggpubr); library(rempsyc)
+library(MuMIn); library(ggeffects); library(ggpubr); library(cowplot); library(report);library(broom)
+```
+
+```{r traffic and spec count}
+#Quick plot of data
+global_count <- readRDS("Data/global_count.rds")
+
+global_count <- global_count %>% 
+  filter(year >= 2010, month(date) >= 9)
+
+global_count$month <- as.factor(month(global_count$date))
+global_count$year <- as.factor(global_count$year)
+global_count$day <- as.factor(global_count$day)
+ggplot(data = global_count, aes(x = as.factor(year), y = spectators)) +
+  geom_point() +
+  geom_boxplot()
+
+         
+marine_df <- readRDS("Data/Marine_traffic/Marine_traffic_2012-2020.rds")
+marine_df$timestamp <- dmy_hms(marine_df$timestamp)
+marine_df_count <- marine_df %>%
+  filter(!is.na(timestamp)) %>% 
+  filter(year(timestamp) >= 2014) %>%
+  filter(month(timestamp) >= 9) %>%
+  mutate(date = date(timestamp)) %>% 
+  group_by(date) %>% 
+  summarise(n_boat = n()) %>% 
+  mutate(year = year(date))
+
+marine_df_count$day <- as.factor(as.character(day(marine_df_count$date)))
+marine_df_count$month <- as.factor(as.character(month(marine_df_count$date)))
+marine_df_count$year <- as.factor(as.character(year(marine_df_count$date)))
+
+ggplot(data = marine_df_count, aes(x = year, y = n_boat)) +
+  geom_point() +
+  geom_boxplot()
+
+#Model nspec
+n_spec_mod <- lm(spectators ~ month+year,
+                   data = global_count,
+                 na.action = "na.fail")
+
+
+mod_select_spec <- dredge(n_spec_mod)
+mod_select_spec_print <- nice_table(mod_select_spec[,2:ncol(mod_select_spec)])
+flextable::save_as_docx(mod_select_spec_print, path = "R/Figures/final_figures/mod_select_spec.docx")
+
+mod_tab_spec <- as.data.frame(report(n_spec_mod))
+mod_tab_spec <- nice_table(mod_tab_spec, short = T)
+flextable::save_as_docx(mod_tab_spec, path = "R/Figures/final_figures/summary_spec.docx")
+
+plot_model(n_spec_mod, type = "diag")
+plot_model(n_spec_mod, type = "est")
+plot_model(n_spec_mod, type = "pred", ci.lvl = 0.95)
+
+summary(glht(n_spec_mod, linfct = multcomp::mcp(month = "Tukey")), test = adjusted("holm"))
+
+#Model nboat
+n_boat_mod <- lm(n_boat ~ month+year,
+                   data = marine_df_count,
+                 na.action = "na.fail")
+
+mod_select_boat <- dredge(n_boat_mod)
+mod_select_boat_print <- nice_table(mod_select_boat[,2:ncol(mod_select_boat)])
+flextable::save_as_docx(mod_select_boat_print, path = "R/Figures/final_figures/mod_select_boat.docx")
+
+n_boat_mod_final <- lm(n_boat ~ month+year,
+                   data = marine_df_count,
+                 na.action = "na.fail")
+
+mod_tab_boat <- as.data.frame(report(n_boat_mod_final))
+mod_tab_boat <- nice_table(mod_tab_boat, short = T)
+flextable::save_as_docx(mod_tab_boat, path = "R/Figures/final_figures/summary_boat.docx")
+
+plot_model(n_boat_mod_final, type = "diag")
+plot_model(n_boat_mod_final, type = "est")
+plot_model(n_boat_mod_final, type = "pred", ci.lvl = 0.95)
+
+summary(glht(n_boat_mod_final, linfct = multcomp::mcp(year = "Tukey")), test = adjusted("holm"))
+
+#Clean plot
+library(ggdist)
+
+spec_plot_mod <- ggplot(global_count, aes(x = as.factor(year), y = spectators)) + 
+  geom_violin(fill = "white", width = 1.5) + 
+  geom_boxplot(width = .2, outlier.shape = NA, coef = 0, aes(color = covid)) +
+  ggforce::geom_sina(method = "counts", alpha = .2) +
+  geom_text(x = "2020", y = 1500, label = "***", size = 10) +
+  labs(x = "Year",
+       y = "Daily number of tourists",
+       title = "A.",
+       col = "Year with lock-down") +
+  theme_pubr() +
+  labs_pubr() +
+  scale_color_viridis(discrete = T, option = "cividis") +
+  theme(legend.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        axis.text = element_text(size = 20),
+        text = element_text(size = 20),
+        legend.position = "none")
+spec_plot_mod
+boat_plot_mod <- ggplot(marine_df_count, aes(x = as.factor(year), y = n_boat)) + 
+  geom_violin(fill = "white") + 
+  geom_boxplot(width = .2, outlier.shape = NA, coef = 0) +
+  ggforce::geom_sina(method = "counts", alpha = .2) +
+  geom_text(x = "2014", y = 400, label = "***", size = 10) +
+  geom_text(x = "2018", y = 600, label = "**", size = 10) +
+  labs(x = "Year",
+       y = "Daily number of vessels",
+       title = "B.") +
+  theme_pubr() +
+  labs_pubr() +
+  theme(legend.title = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        axis.text = element_text(size = 20),
+        text = element_text(size = 20),
+        legend.position = "none")
+
+cowplot::plot_grid(spec_plot_mod, boat_plot_mod, ncol = 1)
+ggsave("R/Figures/final_figures/fig1.png", units = "mm", width = 80, height = 60, dpi = 600, scale = 3.5)
+```
+
+
+```{r adjust weighbride}
+weighbridge <- readRDS("Data/weighbridge.rds") 
+daily_count_boat <- marine_df_count 
+weighbridge <- weighbridge %>% filter(season >=2014)
+
+weighbridge$breeding_stage <- as.factor(weighbridge$breeding_stage)
+weighbridge$breeding_stage <- ordered(weighbridge$breeding_stage, levels = c("Incubation", "Guard", "PG"))
+
+#Calculate arrival and leaving time relatively to sunset/sunrise
+weighbridge$hour_out <- as.POSIXct(format(strptime(weighbridge$localtime_out, "%Y-%m-%d %H:%M:%S"), "%H:%M:%S"), format="%H:%M:%S")
+weighbridge$hour_in <- as.POSIXct(format(strptime(weighbridge$localtime_in, "%Y-%m-%d %H:%M:%S"), "%H:%M:%S"), format="%H:%M:%S")
+
+colon <-  145.1503  #colony longitude 145.1496 ~ 145.151
+colat <-  -38.5103  #colony latitude -38.5106 ~ -38.509
+
+weighbridge$localtime_out <- force_tz(weighbridge$localtime_out, tz = "Australia/Melbourne")
+weighbridge$localtime_in <- force_tz(weighbridge$localtime_in, tz = "Australia/Melbourne")
+
+#Prepare the tibble to calculate relative times
+my_out <- tibble(date = date(weighbridge$localtime_out), lat = colat, lon = colon, time_out = weighbridge$localtime_out)
+my_out$adjust_day <- ifelse(hour(my_out$time_out) > 14, T, F) #Some bird leave early in the night (11pm. We need to tweak the date to have the right sunrise)
+my_out$date[which(my_out$adjust_day == TRUE)] <- my_out$date[which(my_out$adjust_day == TRUE)] +1
+weighbridge$sunrise <- getSunlightTimes(data = my_out[,1:3], keep = "nauticalDawn", tz = "Australia/Melbourne")[,4]
+weighbridge$diff_time_out <- weighbridge$localtime_out - weighbridge$sunrise
+
+#Prepare the tibble to calculate relative times
+my_in <- tibble(date = date(weighbridge$localtime_in), lat = colat, lon = colon, time_in = weighbridge$localtime_in)
+my_in$adjust_day <- ifelse(hour(my_in$time_in) < 14, T, F) 
+my_in$date[which(my_in$adjust_day == TRUE)] <- my_in$date[which(my_in$adjust_day == TRUE)] - 1
+weighbridge$sunset <- getSunlightTimes(data = my_in[,1:3], keep = "nauticalDusk", tz = "Australia/Melbourne")[,4]
+weighbridge$diff_time_in <- weighbridge$localtime_in - weighbridge$sunset
+
+#Use numeric values in minutes
+weighbridge$diff_time_out <- as.numeric(weighbridge$diff_time_out, units = "mins")
+weighbridge$diff_time_in <- as.numeric(weighbridge$diff_time_in, units = "mins")
+
+weighbridge$local_date_out <- date(weighbridge$sunrise)-1
+weighbridge$local_date_in <- date(weighbridge$sunset)
+keep_colnames <- c(colnames(weighbridge), "n_spec", "n_spec_return", "n_boat", "n_boat_return")
+weighbridge <- weighbridge %>%
+  left_join(daily_count_boat, by = join_by(local_date_in == date)) %>%
+  rename(n_boat_return = n_boat) %>% 
+  left_join(daily_count_boat, by = join_by(local_date_out == date)) %>% 
+  left_join(global_count, by = join_by(local_date_in == date)) %>% 
+  rename(n_spec_return = spectators) %>% 
+  left_join(global_count, by = join_by(local_date_out == date)) %>% 
+  rename(n_spec = spectators) %>% 
+  dplyr::select(all_of(keep_colnames))
+  
+```
+
+```{r plot attendance, echo=FALSE}
+arrive_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = diff_time_in)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  geom_hline(yintercept = mean(weighbridge$diff_time_in), linetype = "dashed") +
+  facet_grid(~breeding_stage) +
+  labs(y = "Arrival out relative to nautical dusk (min)",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = -30))
+
+plot(arrive_plot)
+
+leave_plot <- ggplot(weighbridge, aes(x = as.factor(season), y = diff_time_out)) +
+  geom_boxplot() +
+  stat_summary(color = "red") +
+  theme_bw() +
+  geom_hline(yintercept = mean(weighbridge$diff_time_out), linetype = "dashed") +
+  facet_grid(~breeding_stage) +
+  labs(y = "Departure time out relative to nautical dawn (min)",
+       x = "Penguin season") +
+  theme(axis.text.x = element_text(angle = -30))
+
+plot(leave_plot)
+
+
+plot_link_leave <- ggplot(weighbridge, aes(x = n_spec, y = diff_time_out, col = as.factor(season))) +
+  geom_point(alpha = 0.5) +
+  facet_grid(~breeding_stage) +
+  theme_bw() +
+  labs(y = "Departure time in relative to nautical dawn (min)",
+       x = "Average number of spectators in the last 7 days")
+
+plot_link_leave
+
+weighbridge$std_date <- weighbridge$sunrise
+year(weighbridge$std_date) <- 2020
+weighbridge$std_date <- as_date(weighbridge$std_date)
+
+departure_trend <- ggplot(weighbridge, aes(x = std_date, y = diff_time_out)) +
+  geom_point() +
+  facet_wrap(~season)
+
+departure_trend
+
+hist(weighbridge$diff_time_out)
+```
+
+
+```{r model attendance}
+source("R/toolbox.R")
+weighbridge$season <- as.factor(weighbridge$season)
+weighbridge$breeding_stage <- as.factor(as.character(weighbridge$breeding_stage))
+weighbridge$stage_season <- interaction(weighbridge$season, weighbridge$breeding_stage)
+
+#Departure model#####
+weighbridge_departure <- weighbridge %>%
+  filter(!is.na(n_spec),
+         !is.na(breeding_stage),
+         !is.na(season),
+         !is.na(diff_time_out),
+         !is.na(n_boat))%>% 
+  mutate(n_spec = (n_spec - mean(n_spec)) / sd(n_spec),
+         n_boat = (n_boat - mean(n_boat)) / sd(n_boat))
+
+grp_dep <- weighbridge_departure %>% group_by(season, breeding_stage) %>% summarise(mean_dep = mean(diff_time_out),
+                                                                                    mean_spec = mean(n_spec),
+                                                                                    mean_boat = mean(n_boat))
+#Model selection
+mod_dep <- lm(mean_dep ~ mean_boat + mean_spec + breeding_stage + season,
+                   data = grp_dep,
+              na.action = "na.fail")
+
+mod_select_dep <- dredge(mod_dep)
+mod_select_dep_print <- nice_table(mod_select_dep[,2:ncol(mod_select_dep)])
+flextable::save_as_docx(mod_select_dep_print, path = "R/Figures/final_figures/mod_select_dep.docx")
+
+
+#Final model - only brd_stage
+mod_dep_final <- lm(mean_dep ~ breeding_stage,
+                    data = grp_dep,
+                    na.action = "na.fail")
+
+mod_tab_dep <- as.data.frame(report(mod_dep_final))
+mod_tab_dep <- nice_table(mod_tab_dep, short = T)
+flextable::save_as_docx(mod_tab_dep, path = "R/Figures/final_figures/summary_dep.docx")
+acf(resid(mod_dep_final))
+
+plot(mod_dep_final) #diagnostic plot okay
+MuMIn::r.squaredGLMM(mod_dep_final, use.hat = TRUE)
+
+#Only significance difference in the departure time between breeding stages
+summary(glht(mod_dep_final, linfct = multcomp::mcp(breeding_stage = "Tukey")), test = adjusted("holm"))
+
+my_pred_dep <- as_tibble(ggpredict(mod_dep_final, terms = "breeding_stage"))
+
+est_dep_plot <- ggplot() +
+  geom_jitter(data = grp_dep, aes(x = breeding_stage, y = mean_dep, col = breeding_stage), size = 5, width = 0.15) +
+  geom_errorbar(data = my_pred_dep, aes(x = x, ymin = conf.low, ymax = conf.high, col = x), width = 0) +
+  geom_point(data = my_pred_dep, aes(x = x, y = predicted, col = x) , shape = 21, size = 7, fill = "white") +
+  labs(x = "Breeding stage", y = "Departure time relative to nautical dawn (min)", col = "Breeding stages", title = "A.") +
+  scale_x_discrete(labels = c("Guard" = "Guard",
+                              "Incubation" = "Incubation",
+                              "PG" = "Post-guard"),
+                   limits = c("Incubation", "Guard", "PG")) +
+  scale_color_viridis(discrete = T,
+                      labels = c("Guard" = "Guard",
+                                 "Incubation" = "Incubation",
+                                 "PG" = "Post-guard"),
+                      limits = c("Incubation", "Guard", "PG")) +
+  coord_flip() +
+  theme_pubr() +
+  labs_pubr() +
+  theme(legend.title = element_text(size = 30),
+        legend.text = element_text(size = 30),
+        axis.text = element_text(size = 30),
+        text = element_text(size = 30),
+        legend.position = "none")
+  
+est_dep_plot
+
+#Arrival model####
+weighbridge_arrival <- weighbridge %>%
+  filter(!is.na(n_spec_return),
+         !is.na(breeding_stage),
+         !is.na(season),
+         !is.na(diff_time_in),
+         !is.na(n_boat_return)) %>% 
+  mutate(n_spec_return = (n_spec_return - mean(n_spec_return)) / sd(n_spec_return),
+         n_boat_return = (n_boat_return - mean(n_boat_return)) / sd(n_boat_return))
+
+grp_arr <- weighbridge_arrival %>% group_by(season, breeding_stage) %>% summarise(mean_arr = mean(diff_time_in),
+                                                                                    mean_spec = mean(n_spec_return),
+                                                                                    mean_boat = mean(n_boat_return))
+
+#Model selection
+mod_arr <- lm(mean_arr ~ mean_boat + mean_spec + breeding_stage + season,
+                   data = grp_arr,
+              na.action = "na.fail")
+
+mod_select_arr <- dredge(mod_arr)
+mod_select_arr_print <- nice_table(mod_select_arr[,2:ncol(mod_select_arr)])
+flextable::save_as_docx(mod_select_arr_print, path = "R/Figures/final_figures/mod_select_arr.docx")
+
+#Final model - only brd_stage
+mod_arr_final <- lm(mean_arr ~ 1,
+                    data = grp_arr,
+                    na.action = "na.fail")
+
+
+mod_tab_arr <- as.data.frame(report(mod_arr_final))
+mod_tab_arr <- nice_table(mod_tab_arr, short = T)
+flextable::save_as_docx(mod_tab_arr, path = "R/Figures/final_figures/summary_arr.docx")
+acf(resid(mod_arr_final))
+plot(mod_arr_final) #diagnostic plot okay
+MuMIn::r.squaredGLMM(mod_arr_final, use.hat = TRUE)
+
+#no significant differences
+summary(glht(mod_arr_final, linfct = multcomp::mcp(breeding_stage = "Tukey")), test = adjusted("holm"))
+
+#Plot
+
+grp_arr$dummy <- "dummy"
+
+est_arr_plot <- ggplot() +
+  geom_point(data = grp_arr, aes(x = mean_arr, y = mean_spec, col = breeding_stage),size = 5) +
+  labs(x = "Arrival time relative to nautical dusk (min)", y = "Standardized number of tourists", title = "B.") +
+  scale_color_viridis(discrete = T,
+                      labels = c("Guard" = "Guard",
+                                 "Incubation" = "Incubation",
+                                 "PG" = "Post-guard"),
+                      limits = c("Incubation", "Guard", "PG")) +
+  theme_pubr() +
+  labs_pubr() +
+  theme(legend.title = element_text(size = 30),
+        legend.text = element_text(size = 30),
+        axis.text = element_text(size = 30),
+        text = element_text(size = 30),
+        legend.position = "none")
+
+est_arr_plot
+```
+
+### 2.3 -- Mass variation
+
+#### 2.3.1 -- Over foraging trip (foraging efficiency)
+
+Here, we look at the difference between the mass of the penguin when it leaves the colony to forage and when it comes back at night. This could be therefore a indicator of the foraging efficiency.
+
+Mass gain is normally distributed and there do not seems to be any effect of the amount of spectators.
+
+```{r mass over day - explore}
+hist(weighbridge$MassGain)
+spec_mass_day <- ggplot(weighbridge, aes(x = n_spec, y = MassGain)) + 
+  geom_point()
+plot(spec_mass_day)
+spec_mass_day_return <- ggplot(weighbridge, aes(x = n_spec_return, y = MassGain)) + 
+  geom_point()
+plot(spec_mass_day_return)
+```
+
+We'll try to fit a LMM.
+
+```{r r mass over day - model}
+source("R/toolbox.R")
+weighbridge_mass_day <- weighbridge %>% 
+  filter(!is.na(n_spec),
+         !is.na(n_boat),
+         !is.na(breeding_stage),
+         !is.na(season),
+         !is.na(MassGain))%>% 
+  mutate(n_spec = (n_spec - mean(n_spec)) / sd(n_spec),
+         n_boat = (n_boat - mean(n_boat)) / sd(n_boat),
+         mass_day = MassGain/FT_days)
+
+
+grp_mass_day <- weighbridge_mass_day %>% group_by(season, breeding_stage) %>% summarise(mean_mass = mean(mass_day),
+                                                                                    mean_spec = mean(n_spec),
+                                                                                    mean_boat = mean(n_boat))
+
+#Model selection
+mod_mass_day <- lm(mean_mass ~ mean_boat + mean_spec + breeding_stage + season,
+                   data = grp_mass_day,
+              na.action = "na.fail")
+
+mod_select_mass_day <- dredge(mod_mass_day)
+mod_select_mass_day_print <- nice_table(mod_select_mass_day[,2:ncol(mod_select_mass_day)])
+flextable::save_as_docx(mod_select_mass_day_print, path = "R/Figures/final_figures/mod_select_mass_day.docx")
+
+#Final model - brd satge and boat
+mod_mass_day_final <- lm(mean_mass ~ breeding_stage + mean_boat,
+                    data = grp_mass_day,
+                    na.action = "na.fail")
+
+mod_tab_mass_day <- as.data.frame(report(mod_mass_day_final))
+mod_tab_mass_day <- nice_table(mod_tab_mass_day, short = T)
+flextable::save_as_docx(mod_tab_mass_day, path = "R/Figures/final_figures/summary_mass_day.docx")
+acf(resid(mod_mass_day_final))
+plot(mod_mass_day_final) #diagnostic plot okay
+MuMIn::r.squaredGLMM(mod_mass_day_final, use.hat = TRUE)
+
+Anova(mod_mass_day_final, type = 2) 
+summary(glht(mod_mass_day_final, linfct = multcomp::mcp(breeding_stage = "Tukey")), test = adjusted("holm"))
+
+#Plot
+my_pred_mass_day <- as_tibble(ggpredict(mod_mass_day_final, terms = c("mean_boat", "breeding_stage")))
+
+est_mass_day_plot <- ggplot() +
+  geom_ribbon(data = my_pred_mass_day, aes(x = x, ymin = conf.low, ymax = conf.high, col = group),linetype = 2, alpha = 0) +
+  geom_line(data = my_pred_mass_day, aes(x = x, y = predicted, col = group), size = 1) +
+  geom_point(data = grp_mass_day, aes(x = mean_boat, y = mean_mass, col = breeding_stage), size = 5) +
+  labs(x = "Standardized number of vessels", y = "Mass gain per day at sea (g)", col = "Breeding stages", title = "C.") +
+  scale_color_viridis(discrete = T,
+                      labels = c("Guard" = "Guard",
+                                 "Incubation" = "Incubation",
+                                 "PG" = "Post-guard"),
+                      limits = c("Incubation", "Guard", "PG")) +
+  theme_pubr() +
+  labs_pubr() +
+  theme(legend.title = element_text(size = 30),
+        legend.text = element_text(size = 30),
+        axis.text = element_text(size = 30),
+        text = element_text(size = 30),
+        legend.position = "none")
+
+est_mass_day_plot
+```
+
+#### 2.3.2 -- Overnight (offspring investment)
+
+Same but overnight to look at the chick investment. We still need to had the 2020 season here.
+
+```{r load and arrange data}
+overnight <- readRDS("Data/feed_overnight.rds") 
+
+overnight <- overnight %>% filter(season >=2014)
+
+overnight$breeding_stage <- as.factor(overnight$breeding_stage)
+overnight$breeding_stage <- ordered(overnight$breeding_stage, levels = c("Incubation", "Guard", "PG"))
+
+#Because we are interested in the investment overnight to the chick, we only keep observations where pengu stayed less than on days at the colony
+overnight$time_at_col <- difftime(overnight$datetime_in, overnight$datetime_out, units = "days")
+overnight <- overnight %>% filter(time_at_col <= 1, !is.na(Mass.feed))
+
+overnight$local_date_out <- date(overnight$datetime_out)
+keep_colnames <- c(colnames(overnight), "n_spec", "n_boat")
+overnight <- overnight %>%
+  left_join(daily_count_boat, by = join_by(local_date_out == date)) %>%
+  left_join(global_count, by = join_by(local_date_out == date)) %>% 
+  rename(n_spec = spectators) %>% 
+  dplyr::select(all_of(keep_colnames))
+```
+
+```{r mass over night - explore}
+hist(overnight$Mass.feed)
+plot(overnight$Mass.feed, overnight$n_spec)
+plot(overnight$Mass.feed, overnight$n_boat)
+```
+
+```{r model overnight}
+source("R/toolbox.R")
+overnight$season <- as.factor(overnight$season)
+overnight$breeding_stage <- as.factor(as.character(overnight$breeding_stage))
+overnight$stage_season <- interaction(overnight$season, overnight$breeding_stage)
+
+weighbridge_mass_night <- overnight %>%
+  filter(!is.na(n_spec),
+         !is.na(n_boat),
+         !is.na(breeding_stage),
+         !is.na(season),
+         !is.na(Mass.feed)) %>% 
+           mutate(n_spec = (n_spec - mean(n_spec)) / sd(n_spec),
+                  n_boat = (n_boat - mean(n_boat)) / sd(n_boat))
+
+grp_mass_night <- weighbridge_mass_night %>% group_by(season, breeding_stage) %>% summarise(mean_mass = mean(Mass.feed),
+                                                                                    mean_spec = mean(n_spec),
+                                                                                    mean_boat = mean(n_boat))
+
+#Model selection
+mod_mass_night <- lm(mean_mass ~ mean_boat + mean_spec + season + breeding_stage,
+                   data = grp_mass_night,
+              na.action = "na.fail")
+
+mod_select_mass_night <- dredge(mod_mass_night)
+mod_select_mass_night_print <- nice_table(mod_select_mass_night[,2:ncol(mod_select_mass_night)])
+flextable::save_as_docx(mod_select_mass_night_print, path = "R/Figures/final_figures/mod_select_mass_night.docx")
+
+#Final model - boat
+mod_mass_night_final <- lm(mean_mass ~ mean_boat,
+                    data = grp_mass_night,
+                    na.action = "na.fail")
+mod_tab_mass_night <- as.data.frame(report(mod_mass_night_final))
+mod_tab_mass_night <- nice_table(mod_tab_mass_night, short = T)
+flextable::save_as_docx(mod_tab_mass_night, path = "R/Figures/final_figures/summary_mass_night.docx")
+acf(resid(mod_mass_night_final))
+plot(mod_mass_night_final) #diagnostic plot okay
+MuMIn::r.squaredGLMM(mod_mass_night_final, use.hat = TRUE)
+
+Anova(mod_mass_night_final, type = 2) 
+
+#Plot
+my_pred_mass_night <- as_tibble(ggpredict(mod_mass_night_final, terms = c("mean_boat")))
+
+est_mass_night_plot <- ggplot() +
+  geom_ribbon(data = my_pred_mass_night, aes(x = x, ymin = conf.low, ymax = conf.high),linetype = 2, alpha = 0, col = "black") +
+  geom_line(data = my_pred_mass_night, aes(x = x, y = predicted), size = 1) +
+  geom_point(data = grp_mass_night, aes(x = mean_boat, y = mean_mass, col = breeding_stage), size = 5) +
+  labs(x = "Standardized number of vessels", y = "Meal size given to chicks (g)", col = "Breeding stages", title = "D.") +
+  scale_color_manual(values = c("#21908CFF", "#FDE725FF"),
+                      labels = c("Guard" = "Guard",
+                                 "PG" = "Post-guard"),
+                      limits = c("Guard", "PG")) +
+  theme_pubr() +
+  labs_pubr() +
+  theme(legend.title = element_text(size = 30),
+        legend.text = element_text(size = 30),
+        axis.text = element_text(size = 30),
+        text = element_text(size = 30),
+        legend.position = "none")
+
+est_mass_night_plot
+
+```
+
+```{r weighbridge panel}
+plot_weighbridge <- cowplot::plot_grid(est_dep_plot, est_arr_plot,est_mass_day_plot, est_mass_night_plot, ncol = 2, nrow = 2, align = "V")
+
+dummy_legend <- ggplot() +
+  geom_ribbon(data = my_pred_mass_day, aes(x = x, ymin = conf.low, ymax = conf.high, col = group),linetype = 2, alpha = 0) +
+  geom_line(data = my_pred_mass_day, aes(x = x, y = predicted, col = group), size = 1) +
+  geom_point(data = grp_mass_day, aes(x = mean_boat, y = mean_mass, col = breeding_stage), size = 5) +
+  labs(col = "Breeding stages") +
+  scale_color_viridis(discrete = T,
+                      labels = c("Guard" = "Guard",
+                                 "Incubation" = "Incubation",
+                                 "PG" = "Post-guard"),
+                      limits = c("Incubation", "Guard", "PG")) +
+  theme_pubr() +
+  labs_pubr() +
+  theme(legend.title = element_text(size = 30),
+        legend.text = element_text(size = 30),
+        axis.text = element_text(size = 30),
+        text = element_text(size = 30))
+
+figure_weighbridge <- cowplot::plot_grid(cowplot::get_legend(dummy_legend), plot_weighbridge, ncol = 1, rel_heights = c(0.1,1))
+figure_weighbridge
+
+ggsave(plot =  figure_weighbridge,  filename = "R/Figures/final_figures/fig3.pdf", dpi = 600, width = 180, height = 110, units = "mm", scale = 3.5)
+```
+
+### 2.4 -- Diet
+
+We use the package nicheRover here (SIBER can also be use, results are similar). We do not have any clear pattern when looking at the area or the overlap between season-stage. The only thing we see is a gradual temporal change in the niche (seasons close to each other are more overlapping).
+
+```{r diet analysis}
+ 
+# isotope <- read.csv("Data/lp_isotope.csv", sep = ";")
+# # Format dataset
+# names(isotope) <- tolower(names(isotope))
+# isotope <- isotope %>% filter(year >= 2010, b.stage != "Pre-breeding")
+# flextable::save_as_docx(nice_table(isotope %>%
+#                                      group_by(year, b.stage,sex) %>% 
+#                                      summarise(n = n()) %>%
+#                                      pivot_wider(names_from = year, values_from = n)), path = "R/Figures/final_figures/sample_isotopes.docx")
+# 
+# for (my_stage in unique(isotope$b.stage)) {
+#   my_iso <- isotope %>% filter(b.stage == my_stage)
+#   my_iso$year <- as.factor(my_iso$year)
+#   
+#   aggregate(my_iso[4:5], my_iso[1], mean) # isotope means calculated for each season
+#   
+#   # generate parameter draws from the "default" posteriors of each season
+#   nsamples <- 1e3
+#   system.time({
+#     lp.par <- tapply(1:nrow(my_iso), my_iso$year,
+#                      function(ii) niw.post(nsamples = nsamples, X = my_iso[ii,4:5]))
+#   })
+#   
+#   # various parameter plots
+#   clrs <- viridis(length(levels(my_iso$year))) # colors for each species
+#   
+#   # mu1 (del13C), mu2 (del15N), and Sigma12
+#   par(mar = c(4, 4, .5, .1)+.1, mfrow = c(1,3))
+#   niche.par.plot(lp.par, col = clrs, plot.index = 1)
+#   niche.par.plot(lp.par, col = clrs, plot.index = 2)
+#   niche.par.plot(lp.par, col = clrs, plot.index = 1:2)
+#   legend("topleft", legend = names(lp.par), fill = clrs)
+#   dev.off()
+#   # # all mu (del13C, del15N)
+#   # niche.par.plot(lp.par, col = clrs, plot.mu = TRUE, plot.Sigma = FALSE)
+#   # legend("topleft", legend = names(lp.par), fill = clrs)
+#   # 
+#   # # all mu and Sigma
+#   # par(mar = c(4.2, 4.2, 2, 1)+.1)
+#   # niche.par.plot(lp.par, col = clrs, plot.mu = TRUE, plot.Sigma = TRUE)
+#   # legend("topright", legend = names(lp.par), fill = clrs)
+#   
+#   # 2-d projections of 10 niche regions
+#   nsamples <- 10
+#   lp.par <- tapply(1:nrow(my_iso), my_iso$year,
+#                    function(ii) niw.post(nsamples = nsamples, X = my_iso[ii,4:5]))
+#   
+#   # format data for plotting function
+#   lp.data <- tapply(1:nrow(my_iso), my_iso$year, function(ii) X = my_iso[ii,4:5])
+#   
+#   niche.plot(niche.par = lp.par, niche.data = lp.data, pfrac = .05,
+#              iso.names = expression(delta^{13}*C, delta^{15}*N),
+#              col = clrs)
+#   mtext("Isotope ratio (‰)", side=4)
+#   title(main = my_stage, xlab = "Isotope ratio (‰)")
+#   
+#   # Overlap is the probability that an individual from season A will be found in the niche of season B.
+#   # niche overlap plots for 95% niche region sizes
+#   nsamples <- 1000
+#   lp.par <- tapply(1:nrow(my_iso), my_iso$year,
+#                    function(ii) niw.post(nsamples = nsamples, X = my_iso[ii,4:5]))
+#   
+#   # Overlap calculation.  use nsamples = nprob = 10000 (1e4) for higher accuracy.
+#   # the variable over.stat can be supplied directly to the overlap.plot function
+#   over.stat <- overlap(lp.par, nreps = nsamples, nprob = 1e3, alpha = c(.95, 0.99))
+#   
+#   #The mean overlap metrics calculated across iteratations for both niche 
+#   #region sizes (alpha = .95 and alpha = .99) can be calculated and displayed in an array.
+#   over.mean <- apply(over.stat, c(1:2,4), mean)*100
+#   round(over.mean, 2)
+#   
+#   over.cred <- apply(over.stat*100, c(1:2, 4), quantile, prob = c(.025, .975), na.rm = TRUE)
+#   round(over.cred[,,,1]) # display alpha = .95 niche region
+#   
+#   # Overlap plot.Before you run this, make sure that you have chosen your 
+#   #alpha level.
+#   over.stat <- overlap(lp.par, nreps = nsamples, nprob = 1e3, alpha = .95)
+#   overlap.plot(over.stat, col = clrs, mean.cred.col = "black", equal.axis = TRUE,
+#                xlab = paste0("Overlap Probability (%) - ", my_stage, " - Niche Region Size: 95% "))
+# 
+#   
+#   # Then we can calculate niche size estimates
+#   # posterior distribution of (mu, Sigma) for each species
+#   nsamples <- 1000
+#   lp.par <- tapply(1:nrow(my_iso), my_iso$year,
+#                    function(ii) niw.post(nsamples = nsamples, X = my_iso[ii,4:5]))
+#   
+#   # posterior distribution of niche size by species
+#   lp.size <- sapply(lp.par, function(spec) {
+#     apply(spec$Sigma, 3, niche.size, alpha = .95)
+#   })
+#   
+#   # point estimate and standard error
+#   rbind(est = colMeans(lp.size),
+#         se = apply(lp.size, 2, sd))
+#   
+#   # boxplots
+#   boxplot(lp.size, col = clrs, pch = 16, cex = .5, ylab = "Niche Size", xlab = "Seasons", main = my_stage)
+# }
+```
