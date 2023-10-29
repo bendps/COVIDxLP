@@ -2,9 +2,9 @@
 
 This repository compile all the scripts used in the analyses of the paper "COVID-related anthropause highlights the impact of marine traffic but not of tourism on breeding little penguins" published in Biological conservation (2023).
 
-You can also access the dataset by following this link : 
+You can also access the dataset by following this link : https://data.indores.fr/dataset.xhtml?persistentId=doi:10.48579/PRO/6IQN7I.
 
-Please cite : 
+Please cite : Dupuis, B., Kato, A., Joly, N., Saraux, C., Ropert-Coudert, Y., Chiaradia, A., Chimienti, M., 2023. COVID-related anthropause highlights the impact of marine traffic but not of tourism on breeding little penguins. Biological Conservation 287, 110323. https://doi.org/10.1016/j.biocon.2023.110323
 
 For more information, you can contact me at benjamin.dupuis@ens-lyon.org
 
